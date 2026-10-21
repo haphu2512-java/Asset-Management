@@ -20,48 +20,67 @@ export function OverviewScreen() {
 
   return (
     <ScrollView style={ui.screen} contentContainerStyle={ui.content}>
+      {/* Net Worth Summary Banner */}
       <View style={ui.card}>
-        <Text style={ui.label}>Tài sản ròng</Text>
-        <Text style={[ui.big, s.netWorth < 0 && { color: colors.expense }]}>{formatVnd(s.netWorth)}</Text>
         <View style={ui.row}>
-          <Text style={ui.label}>Tổng tài sản: {formatVnd(s.totalAssets)}</Text>
+          <Text style={ui.label}>TÀI SẢN RÒNG (NET WORTH)</Text>
+          <Text style={[ui.label, { fontWeight: '600' }]}>{new Date().toLocaleDateString('vi-VN')}</Text>
+        </View>
+        <Text style={[ui.big, s.netWorth < 0 && { color: colors.expense }]}>{formatVnd(s.netWorth)}</Text>
+        
+        <View style={ui.divider} />
+
+        <View style={ui.row}>
+          <Text style={ui.label}>Tổng tài sản</Text>
+          <Text style={[ui.text, { fontWeight: '600' }]}>{formatVnd(s.totalAssets)}</Text>
         </View>
         {s.totalDebt > 0 ? (
-          <Text style={[ui.label, { color: colors.expense }]}>Đang nợ: {formatVnd(s.totalDebt)}</Text>
+          <View style={ui.row}>
+            <Text style={[ui.label, { color: colors.expense }]}>Tổng nợ phải trả</Text>
+            <Text style={[ui.text, { color: colors.expense, fontWeight: '600' }]}>-{formatVnd(s.totalDebt)}</Text>
+          </View>
         ) : null}
       </View>
 
+      {/* Asset Distribution */}
       <View style={ui.card}>
-        <Text style={ui.heading}>Cơ cấu tài sản</Text>
+        <View style={ui.row}>
+          <Text style={ui.heading}>Cơ cấu tài sản</Text>
+          <Text style={ui.label}>{assetItems.length} danh mục</Text>
+        </View>
         {assetItems.length === 0 ? (
-          <Text style={ui.label}>Chưa có tài sản. Vào tab Tài sản để thêm.</Text>
+          <Text style={[ui.label, { paddingVertical: 12 }]}>Chưa có tài sản. Vào tab Tài sản để thêm.</Text>
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-            <DonutChart slices={assetItems.map((i) => ({ value: i.amount, color: i.color }))} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 4 }}>
+            <DonutChart size={100} slices={assetItems.map((i) => ({ value: i.amount, color: i.color }))} />
             <Legend items={assetItems} total={s.totalAssets} />
           </View>
         )}
       </View>
 
+      {/* Monthly Cash Flow */}
       <View style={ui.card}>
-        <Text style={ui.heading}>{formatMonth(month.month)}</Text>
         <View style={ui.row}>
+          <Text style={ui.heading}>Thu chi {formatMonth(month.month)}</Text>
+        </View>
+        <View style={[ui.row, { paddingVertical: 2 }]}>
           <Text style={ui.text}>Thu nhập</Text>
-          <Text style={[ui.text, { color: colors.income }]}>+{formatVnd(month.income)}</Text>
+          <Text style={[ui.text, { color: colors.income, fontWeight: '600' }]}>+{formatVnd(month.income)}</Text>
         </View>
-        <View style={ui.row}>
+        <View style={[ui.row, { paddingVertical: 2 }]}>
           <Text style={ui.text}>Chi tiêu</Text>
-          <Text style={[ui.text, { color: colors.expense }]}>-{formatVnd(month.expense)}</Text>
+          <Text style={[ui.text, { color: colors.expense, fontWeight: '600' }]}>-{formatVnd(month.expense)}</Text>
         </View>
+        <View style={ui.divider} />
         <View style={ui.row}>
-          <Text style={ui.heading}>Còn lại</Text>
-          <Text style={[ui.heading, { color: month.balance < 0 ? colors.expense : colors.income }]}>
-            {formatVnd(month.balance)}
+          <Text style={[ui.heading, { fontSize: 14 }]}>Dòng tiền ròng (Còn lại)</Text>
+          <Text style={[ui.heading, { fontSize: 14, color: month.balance < 0 ? colors.expense : colors.income }]}>
+            {month.balance > 0 ? '+' : ''}{formatVnd(month.balance)}
           </Text>
         </View>
         {expenseItems.length > 0 ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 8 }}>
-            <DonutChart size={120} slices={expenseItems.map((i) => ({ value: i.amount, color: i.color }))} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 10 }}>
+            <DonutChart size={100} slices={expenseItems.map((i) => ({ value: i.amount, color: i.color }))} />
             <Legend items={expenseItems} total={month.expense} />
           </View>
         ) : null}

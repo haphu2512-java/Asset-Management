@@ -15,34 +15,57 @@ type Props = {
 /** Bottom sheet used by the add/edit forms. */
 export function Sheet({ visible, title, onClose, onSave, onDelete, error, children }: Props) {
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' }}
+        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
       >
         <View
           style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
+            backgroundColor: colors.card,
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
             maxHeight: '90%',
           }}
         >
-          <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
-            <View style={ui.row}>
-              <Text style={ui.title}>{title}</Text>
-              <Pressable onPress={onClose} hitSlop={12}>
-                <Text style={[ui.text, { color: colors.muted }]}>Đóng</Text>
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+            <View style={[ui.row, { paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
+              <Text style={ui.heading}>{title}</Text>
+              <Pressable
+                onPress={onClose}
+                hitSlop={12}
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 4,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: colors.muted }}>Đóng</Text>
               </Pressable>
             </View>
+
             {children}
-            {error ? <Text style={{ color: colors.expense }}>{error}</Text> : null}
+
+            {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
+
             <Pressable style={ui.button} onPress={onSave}>
-              <Text style={ui.buttonText}>Lưu</Text>
+              <Text style={ui.buttonText}>Lưu thay đổi</Text>
             </Pressable>
+
             {onDelete ? (
-              <Pressable onPress={onDelete} style={{ alignItems: 'center', paddingVertical: 8 }}>
-                <Text style={{ color: colors.expense, fontSize: 15 }}>Xoá</Text>
+              <Pressable
+                onPress={onDelete}
+                style={{
+                  alignItems: 'center',
+                  paddingVertical: 8,
+                  marginTop: -4,
+                }}
+              >
+                <Text style={{ color: colors.expense, fontSize: 13, fontWeight: '500' }}>Xoá mục này</Text>
               </Pressable>
             ) : null}
           </ScrollView>
@@ -54,7 +77,7 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: 4 }}>
       <Text style={ui.label}>{label}</Text>
       {children}
     </View>
@@ -73,16 +96,29 @@ export function Chips({
   onChange: (id: string) => void;
 }) {
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
       {options.map((o) => {
         const selected = o.id === value;
         return (
           <Pressable
             key={o.id}
             onPress={() => onChange(o.id)}
-            style={[ui.chip, selected && { backgroundColor: o.color, borderColor: o.color }]}
+            style={[
+              ui.chip,
+              selected
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: '#FFFFFF', borderColor: colors.border },
+            ]}
           >
-            <Text style={{ color: selected ? '#FFFFFF' : colors.text }}>{o.label}</Text>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: selected ? '600' : '400',
+                color: selected ? '#FFFFFF' : colors.text,
+              }}
+            >
+              {o.label}
+            </Text>
           </Pressable>
         );
       })}

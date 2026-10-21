@@ -8,7 +8,7 @@ import { colors, ui } from '../theme';
 
 type Props = { onSave: (transaction: Transaction) => Promise<void> };
 
-/** Type "cafe 35k" or snap a receipt; the AI turns it into transactions that are saved right away. */
+/** Type "cafe 35k" or snap a receipt; the parser turns it into transactions that are saved right away. */
 export function QuickEntryBar({ onSave }: Props) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -26,8 +26,7 @@ export function QuickEntryBar({ onSave }: Props) {
       setText('');
       setMessage(
         `Đã thêm: ${entries.map(describeEntry).join('; ')}` +
-          (offline ? ' (AI không phản hồi, đã tự phân loại)' : '') +
-          '. Chạm vào giao dịch để sửa.',
+          (offline ? ' (Tự phân loại)' : ''),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Đã có lỗi xảy ra.');
@@ -46,7 +45,7 @@ export function QuickEntryBar({ onSave }: Props) {
         ? await ImagePicker.requestCameraPermissionsAsync()
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setError(source === 'camera' ? 'Cần quyền dùng camera để chụp hoá đơn.' : 'Cần quyền truy cập ảnh.');
+      setError(source === 'camera' ? 'Cần quyền camera để chụp hoá đơn.' : 'Cần quyền truy cập ảnh.');
       return;
     }
     const options: ImagePicker.ImagePickerOptions = {
@@ -66,7 +65,7 @@ export function QuickEntryBar({ onSave }: Props) {
   };
 
   const chooseReceipt = () => {
-    Alert.alert('Ghi từ hoá đơn', 'Chọn ảnh hoá đơn để AI đọc số tiền.', [
+    Alert.alert('Quét hoá đơn', 'Chọn ảnh hoá đơn để trích xuất giao dịch.', [
       { text: 'Chụp ảnh', onPress: () => pick('camera') },
       { text: 'Chọn từ thư viện', onPress: () => pick('library') },
       { text: 'Huỷ', style: 'cancel' },
@@ -75,31 +74,52 @@ export function QuickEntryBar({ onSave }: Props) {
 
   return (
     <View style={ui.card}>
-      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
         <TextInput
           placeholderTextColor={colors.muted}
-          style={[ui.input, { flex: 1, paddingVertical: 8 }]}
+          style={[ui.input, { flex: 1, paddingVertical: 6, fontSize: 13 }]}
           value={text}
           onChangeText={setText}
-          placeholder='Nhập nhanh: "cafe 35k", "lương 20tr"'
+          placeholder='Nhập nhanh: "cafe 35k", "ăn trưa 50k", "lương 20tr"...'
           returnKeyType="send"
           onSubmitEditing={submitText}
           editable={!busy}
         />
         {busy ? (
-          <ActivityIndicator color={colors.primary} style={{ width: 40 }} />
+          <ActivityIndicator color={colors.primary} size="small" style={{ width: 36 }} />
         ) : text.trim() ? (
-          <Pressable onPress={submitText} style={{ padding: 8 }} accessibilityLabel="Thêm giao dịch nhanh">
-            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 16 }}>Thêm</Text>
+          <Pressable
+            onPress={submitText}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 7,
+              backgroundColor: colors.primary,
+              borderRadius: 4,
+            }}
+            accessibilityLabel="Ghi nhanh"
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Ghi</Text>
           </Pressable>
         ) : (
-          <Pressable onPress={chooseReceipt} style={{ padding: 8 }} accessibilityLabel="Chụp hoá đơn">
-            <Text style={{ fontSize: 22 }}>📷</Text>
+          <Pressable
+            onPress={chooseReceipt}
+            hitSlop={6}
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 7,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 4,
+              backgroundColor: colors.background,
+            }}
+            accessibilityLabel="Quét hoá đơn"
+          >
+            <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '600' }}>Hóa đơn</Text>
           </Pressable>
         )}
       </View>
       {message ? <Text style={[ui.label, { color: colors.income }]}>{message}</Text> : null}
-      {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: colors.expense, fontSize: 12 }}>{error}</Text> : null}
     </View>
   );
 }

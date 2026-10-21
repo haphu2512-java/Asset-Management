@@ -1,4 +1,4 @@
-export type CategoryId = 'cash' | 'stock' | 'crypto' | 'lent' | 'debt';
+export type CategoryId = 'cash' | 'bank' | 'saving' | 'stock' | 'crypto' | 'lent' | 'debt';
 
 export type Category = {
   id: CategoryId;
@@ -10,6 +10,8 @@ export type Category = {
 
 export const CATEGORIES: Category[] = [
   { id: 'cash', label: 'Tiền mặt', color: '#2E7D32', isLiability: false },
+  { id: 'bank', label: 'Tài khoản ngân hàng', color: '#2E7D32', isLiability: false },
+  { id: 'saving', label: 'Tiết kiệm', color: '#2E7D32', isLiability: false },
   { id: 'stock', label: 'Cổ phiếu', color: '#1565C0', isLiability: false },
   { id: 'crypto', label: 'Crypto', color: '#F9A825', isLiability: false },
   { id: 'lent', label: 'Cho vay', color: '#6A1B9A', isLiability: false },

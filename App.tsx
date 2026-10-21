@@ -12,11 +12,11 @@ import { StoreProvider, useStore } from './src/store';
 import { colors, ui } from './src/theme';
 
 const TABS = [
-  { id: 'overview', label: 'Tổng quan', icon: '◉', Screen: OverviewScreen },
-  { id: 'assets', label: 'Tài sản', icon: '◈', Screen: AssetsScreen },
-  { id: 'transactions', label: 'Thu chi', icon: '⇅', Screen: TransactionsScreen },
-  { id: 'goals', label: 'Mục tiêu', icon: '◎', Screen: GoalsScreen },
-  { id: 'advisor', label: 'AI', icon: '✦', Screen: AdvisorScreen },
+  { id: 'overview', label: 'Tổng quan', Screen: OverviewScreen },
+  { id: 'assets', label: 'Tài sản', Screen: AssetsScreen },
+  { id: 'transactions', label: 'Thu chi', Screen: TransactionsScreen },
+  { id: 'goals', label: 'Mục tiêu', Screen: GoalsScreen },
+  { id: 'advisor', label: 'Cố vấn AI', Screen: AdvisorScreen },
 ] as const;
 
 function Main() {
@@ -25,7 +25,7 @@ function Main() {
   const current = TABS.find((t) => t.id === tab)!;
 
   const handleSignOut = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
+    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất tài khoản?', [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Đăng xuất', style: 'destructive', onPress: signOut },
     ]);
@@ -42,28 +42,33 @@ function Main() {
 
   return (
     <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
-      {/* Header */}
+      {/* Human-designed clean professional header with subtle border */}
       <View
         style={{
           paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
+          paddingVertical: 10,
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
+          backgroundColor: colors.card,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
         }}
       >
         <Text style={ui.title}>{current.label}</Text>
         <Pressable
           onPress={handleSignOut}
+          hitSlop={8}
           style={{
-            paddingHorizontal: 10,
-            paddingVertical: 5,
-            borderRadius: 8,
-            backgroundColor: '#FFEBEE',
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: 4,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.background,
           }}
         >
-          <Text style={{ fontSize: 12, color: colors.expense, fontWeight: '600' }}>
+          <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500' }}>
             Đăng xuất
           </Text>
         </Pressable>
@@ -72,10 +77,21 @@ function Main() {
       {syncError ? (
         <Pressable
           onPress={dismissSyncError}
-          style={{ marginHorizontal: 16, marginVertical: 4, padding: 10, borderRadius: 8, backgroundColor: '#FFEBEE' }}
+          style={{
+            marginHorizontal: 12,
+            marginTop: 8,
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            borderRadius: 4,
+            borderWidth: 1,
+            borderColor: '#FECACA',
+            backgroundColor: '#FEF2F2',
+          }}
           accessibilityRole="alert"
         >
-          <Text style={{ fontSize: 12, color: colors.expense }}>{syncError} (chạm để ẩn)</Text>
+          <Text style={{ fontSize: 12, color: colors.expense }}>
+            {syncError} <Text style={{ color: colors.muted }}>(chạm để ẩn)</Text>
+          </Text>
         </Pressable>
       ) : null}
 
@@ -88,13 +104,14 @@ function Main() {
         )}
       </View>
 
-      {/* Bottom Tabs */}
+      {/* Human-designed Segmented/Tab bar with precise active border */}
       <View
         style={{
           flexDirection: 'row',
           borderTopWidth: 1,
           borderTopColor: colors.border,
           backgroundColor: colors.card,
+          height: 52,
         }}
       >
         {TABS.map((t) => {
@@ -103,21 +120,21 @@ function Main() {
             <Pressable
               key={t.id}
               onPress={() => setTab(t.id)}
-              style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderTopWidth: active ? 2 : 0,
+                borderTopColor: active ? colors.primary : 'transparent',
+                backgroundColor: active ? colors.primaryLight : 'transparent',
+              }}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
             >
               <Text
                 style={{
-                  fontSize: 18,
-                  color: active ? colors.primary : colors.muted,
-                }}
-              >
-                {t.icon}
-              </Text>
-              <Text
-                style={{
                   fontSize: 12,
+                  fontWeight: active ? '600' : '500',
                   color: active ? colors.primary : colors.muted,
                 }}
               >

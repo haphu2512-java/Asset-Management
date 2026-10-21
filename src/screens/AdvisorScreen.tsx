@@ -26,27 +26,34 @@ export function AdvisorScreen() {
   return (
     <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
       <View style={ui.card}>
-        <Text style={ui.heading}>Cố vấn tài chính AI</Text>
+        <Text style={ui.heading}>Cố vấn tài chính</Text>
         <Text style={ui.label}>
-          AI đọc số liệu tài sản và thu chi 3 tháng gần nhất của bạn, rồi đưa ra nhận xét và lời khuyên. Số liệu (kể cả ghi chú giao dịch) được gửi tới Anthropic để phân tích khi bạn bấm Phân tích.
+          Hệ thống tổng hợp tình hình tài sản, nợ và thu chi 3 tháng gần nhất để phân tích và đưa ra khuyến nghị thực tế.
         </Text>
         <TextInput
           placeholderTextColor={colors.muted}
-          style={[ui.input, { minHeight: 70, textAlignVertical: 'top' }]}
+          style={[ui.input, { minHeight: 60, textAlignVertical: 'top' }]}
           value={question}
           onChangeText={setQuestion}
-          placeholder="Câu hỏi riêng (tuỳ chọn), ví dụ: Tôi nên tiết kiệm bao nhiêu mỗi tháng?"
+          placeholder="Nhập câu hỏi cụ thể (ví dụ: Tỷ lệ phân bổ tiền mặt của tôi đã an toàn chưa?)"
           multiline
         />
         <Pressable style={[ui.button, loading && { opacity: 0.6 }]} onPress={ask} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={ui.buttonText}>Phân tích</Text>}
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={ui.buttonText}>Bắt đầu phân tích</Text>
+          )}
         </Pressable>
-        {error ? <Text style={{ color: colors.expense }}>{error}</Text> : null}
+        {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
       </View>
 
       {advice ? (
         <View style={ui.card}>
-          <Text style={[ui.text, { lineHeight: 22 }]} selectable>
+          <View style={[ui.row, { paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
+            <Text style={[ui.label, { fontWeight: '700' }]}>KẾT QUẢ ĐÁNH GIÁ</Text>
+          </View>
+          <Text style={[ui.text, { fontSize: 13, lineHeight: 22 }]} selectable>
             {advice}
           </Text>
         </View>

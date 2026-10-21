@@ -42,60 +42,99 @@ function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
 
   return (
     <View style={ui.card}>
-      <Pressable onPress={onEdit} style={ui.row}>
+      <View style={ui.row}>
         <Text style={[ui.heading, { flex: 1 }]}>{goal.name}</Text>
-        <Text style={[ui.label, { color: colors.primary }]}>Sửa</Text>
-      </Pressable>
-      <Text style={ui.text}>
-        {formatVnd(goal.saved)} / {formatVnd(goal.target)}
-      </Text>
-      <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.border, overflow: 'hidden' }}>
+        <Pressable
+          onPress={onEdit}
+          hitSlop={8}
+          style={{
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 4,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500' }}>Sửa</Text>
+        </Pressable>
+      </View>
+
+      <View style={ui.row}>
+        <Text style={[ui.text, { fontWeight: '700' }]}>{formatVnd(goal.saved)}</Text>
+        <Text style={ui.label}>Mục tiêu: {formatVnd(goal.target)}</Text>
+      </View>
+
+      {/* Clean flat progress line */}
+      <View style={{ height: 6, backgroundColor: colors.borderSubtle, borderRadius: 3, overflow: 'hidden' }}>
         <View
           style={{
-            width: `${Math.round(p.ratio * 100)}%`,
+            width: `${Math.min(100, Math.round(p.ratio * 100))}%`,
             height: '100%',
             backgroundColor: done ? colors.income : colors.primary,
           }}
         />
       </View>
+
       <View style={ui.row}>
-        <Text style={ui.label}>{Math.round(p.ratio * 100)}% · hạn {formatDate(goal.deadline)}</Text>
-        {done ? <Text style={[ui.label, { color: colors.income }]}>Đã đạt mục tiêu 🎉</Text> : null}
+        <Text style={ui.label}>
+          {Math.round(p.ratio * 100)}% hoàn thành · Hạn {formatDate(goal.deadline)}
+        </Text>
+        {done ? <Text style={[ui.label, { color: colors.income, fontWeight: '600' }]}>Đã đạt</Text> : null}
       </View>
+
       {!done ? (
-        <Text style={[ui.text, p.overdue && { color: colors.expense }]}>
+        <Text style={[ui.label, { color: p.overdue ? colors.expense : colors.muted }]}>
           {p.overdue
             ? `Đã quá hạn, còn thiếu ${formatVnd(p.remaining)}.`
-            : `Cần để dành ${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng tới.`}
+            : `Cần tích lũy ~${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng tới.`}
         </Text>
       ) : null}
 
-      <View style={{ flexDirection: 'row', gap: 8 }}>
+      <View style={ui.divider} />
+
+      {/* Input contribution row */}
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
         <TextInput
           placeholderTextColor={colors.muted}
-          style={[ui.input, { flex: 1, paddingVertical: 8 }]}
+          style={[ui.input, { flex: 1, paddingVertical: 6 }]}
           value={contribution}
           onChangeText={setContribution}
-          placeholder="Góp thêm, ví dụ 2tr"
+          placeholder="Nhập số tiền góp (ví dụ: 2tr)"
           autoCapitalize="none"
           onSubmitEditing={contribute}
         />
-        <Pressable style={[ui.button, { paddingHorizontal: 16, paddingVertical: 8 }]} onPress={contribute}>
-          <Text style={ui.buttonText}>Góp</Text>
+        <Pressable style={[ui.button, { paddingVertical: 7, paddingHorizontal: 12 }]} onPress={contribute}>
+          <Text style={[ui.buttonText, { fontSize: 13 }]}>Góp tiền</Text>
         </Pressable>
       </View>
-      <Pressable onPress={askAi} disabled={loading} style={{ paddingVertical: 4 }}>
+
+      {/* AI Action button */}
+      <Pressable
+        onPress={askAi}
+        disabled={loading}
+        style={{
+          marginTop: 2,
+          paddingVertical: 4,
+          alignSelf: 'flex-start',
+        }}
+      >
         {loading ? (
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <Text style={{ color: colors.primary, fontWeight: '600' }}>✦ Hỏi AI cách đạt mục tiêu này</Text>
+          <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
+            Tư vấn cách đạt mục tiêu
+          </Text>
         )}
       </Pressable>
-      {error ? <Text style={{ color: colors.expense }}>{error}</Text> : null}
+
+      {error ? <Text style={{ color: colors.expense, fontSize: 12 }}>{error}</Text> : null}
+
       {advice ? (
-        <Text style={[ui.text, { lineHeight: 22 }]} selectable>
-          {advice}
-        </Text>
+        <View style={{ marginTop: 4, padding: 10, backgroundColor: colors.background, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
+          <Text style={[ui.text, { fontSize: 13, lineHeight: 20 }]} selectable>
+            {advice}
+          </Text>
+        </View>
       ) : null}
     </View>
   );
@@ -116,10 +155,9 @@ export function GoalsScreen() {
       <ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
         {goals.length === 0 ? (
           <View style={ui.card}>
-            <Text style={ui.heading}>Chưa có mục tiêu nào</Text>
+            <Text style={ui.heading}>Chưa có mục tiêu</Text>
             <Text style={ui.label}>
-              Bấm nút + để đặt mục tiêu, ví dụ để dành 100tr trong 1 năm. App sẽ tính số tiền cần để dành mỗi
-              tháng và AI có thể gợi ý cách đạt được.
+              Bấm nút [+] để lập kế hoạch tài chính (ví dụ: Mua nhà, Mua xe, Quỹ dự phòng). Hệ thống sẽ tính số tiền cần tích lũy mỗi tháng.
             </Text>
           </View>
         ) : null}
@@ -127,9 +165,11 @@ export function GoalsScreen() {
           <GoalCard key={g.id} goal={g} onEdit={() => open(g)} />
         ))}
       </ScrollView>
+
       <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm mục tiêu">
         <Text style={ui.fabText}>+</Text>
       </Pressable>
+
       <GoalForm
         visible={formOpen}
         goal={editing}
