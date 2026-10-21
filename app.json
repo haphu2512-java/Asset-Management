@@ -22,7 +22,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép app đọc ảnh hoá đơn để ghi chi tiêu.",
+          "cameraPermission": "Cho phép app chụp hoá đơn để ghi chi tiêu."
+        }
+      ]
     ]
   }
 }

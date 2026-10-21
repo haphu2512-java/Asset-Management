@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { QuickEntryBar } from '../components/QuickEntryBar';
 import { TransactionForm } from '../components/TransactionForm';
 import {
   formatMonth,
@@ -30,7 +31,8 @@ export function TransactionsScreen() {
 
   return (
     <View style={ui.screen}>
-      <ScrollView contentContainerStyle={ui.content}>
+      <ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+        <QuickEntryBar onSave={saveTransaction} />
         <View style={[ui.card, ui.row]}>
           <Pressable onPress={() => setMonth(shiftMonth(month, -1))} hitSlop={12}>
             <Text style={[ui.heading, { color: colors.primary }]}>‹</Text>

@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   formatVnd,
+  goalProgress,
+  quickParse,
   parseVnd,
   shiftMonth,
   summarize,
@@ -86,4 +88,46 @@ test('summarizeMonth only counts the given month', () => {
 test('shiftMonth crosses year boundaries', () => {
   assert.equal(shiftMonth('2026-01', -1), '2025-12');
   assert.equal(shiftMonth('2026-12', 1), '2027-01');
+});
+
+test('goalProgress spreads the remainder over the months left', () => {
+  const now = new Date(2026, 9, 21); // 21/10/2026
+  const p = goalProgress(
+    { id: 'g', name: 'Quỹ', target: 100_000_000, saved: 40_000_000, deadline: '2027-10-21' },
+    now,
+  );
+  assert.equal(p.remaining, 60_000_000);
+  assert.equal(p.monthsLeft, 12);
+  assert.equal(p.monthlyNeeded, 5_000_000);
+  assert.equal(p.ratio, 0.4);
+  assert.equal(p.overdue, false);
+
+  const late = goalProgress(
+    { id: 'g', name: 'Quỹ', target: 10, saved: 0, deadline: '2026-01-01' },
+    now,
+  );
+  assert.equal(late.overdue, true);
+  assert.equal(late.monthsLeft, 1);
+
+  const done = goalProgress(
+    { id: 'g', name: 'Quỹ', target: 10, saved: 12, deadline: '2026-01-01' },
+    now,
+  );
+  assert.equal(done.monthlyNeeded, 0);
+  assert.equal(done.ratio, 1);
+  assert.equal(done.overdue, false);
+});
+
+test('quickParse reads amount, category and note offline', () => {
+  assert.deepEqual(quickParse('cafe 35k', '2026-10-21'), {
+    kind: 'expense',
+    category: 'food',
+    amount: 35_000,
+    note: 'cafe',
+    date: '2026-10-21',
+  });
+  assert.equal(quickParse('Lương 20tr', '2026-10-21')?.kind, 'income');
+  assert.equal(quickParse('đổ xăng 50.000', '2026-10-21')?.category, 'transport');
+  assert.equal(quickParse('abc 12', '2026-10-21')?.category, 'other-expense');
+  assert.equal(quickParse('không có số', '2026-10-21'), null);
 });

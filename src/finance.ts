@@ -27,7 +27,23 @@ export type Asset = {
   /** Amount in VND, always a non-negative integer. */
   amount: number;
   updatedAt: string;
+  /** Ticker for market-priced assets, e.g. "FPT" or "BTC". */
+  symbol?: string;
+  /** Units held; with a price, amount = quantity × price. */
+  quantity?: number;
+  /** Last market price per unit in VND. */
+  price?: number;
+  priceUpdatedAt?: string;
 };
+
+/** Stock and crypto holdings can follow the market when they have a symbol and quantity. */
+export function isMarketPriced(asset: Pick<Asset, 'category' | 'symbol' | 'quantity'>): boolean {
+  return (
+    (asset.category === 'stock' || asset.category === 'crypto') &&
+    !!asset.symbol &&
+    (asset.quantity ?? 0) > 0
+  );
+}
 
 export type Summary = {
   totalAssets: number;
@@ -181,4 +197,85 @@ export function summarizeMonth(transactions: Transaction[], month: string): Mont
     .filter((c) => c.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   return { month, income, expense, balance: income - expense, expenseByCategory };
+}
+
+export type Goal = {
+  id: string;
+  name: string;
+  /** Target amount in VND. */
+  target: number;
+  /** Amount already put aside in VND. */
+  saved: number;
+  /** Target date, "YYYY-MM-DD". */
+  deadline: string;
+};
+
+export type GoalProgress = {
+  /** 0..1 share of the target already saved. */
+  ratio: number;
+  remaining: number;
+  /** Whole months left until the deadline, at least 1 while the goal is open. */
+  monthsLeft: number;
+  /** What must be saved each month from now on to hit the target on time. */
+  monthlyNeeded: number;
+  overdue: boolean;
+};
+
+export function goalProgress(goal: Goal, now = new Date()): GoalProgress {
+  const remaining = Math.max(0, goal.target - goal.saved);
+  const ratio = goal.target > 0 ? Math.min(1, goal.saved / goal.target) : 0;
+  const [y, m, d] = goal.deadline.split('-').map(Number);
+  let months = (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth());
+  if (d < now.getDate()) months -= 1;
+  const overdue = remaining > 0 && new Date(y, m - 1, d) < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthsLeft = Math.max(1, months);
+  return {
+    ratio,
+    remaining,
+    monthsLeft,
+    monthlyNeeded: remaining === 0 ? 0 : Math.ceil(remaining / monthsLeft),
+    overdue,
+  };
+}
+
+/** Keywords for the offline quick-entry fallback; the AI handles everything else. */
+const QUICK_KEYWORDS: [string, string[]][] = [
+  ['salary', ['lương', 'luong', 'salary']],
+  ['bonus', ['thưởng', 'thuong', 'bonus']],
+  ['transport', ['xăng', 'xang', 'grab', 'be', 'taxi', 'gửi xe', 'gui xe', 'vé xe', 've xe', 'xe buýt', 'bus']],
+  [
+    'food',
+    ['cafe', 'cà phê', 'ca phe', 'cf', 'trà sữa', 'tra sua', 'ăn', 'cơm', 'com', 'phở', 'pho', 'bún', 'bun',
+      'bánh', 'banh', 'nhậu', 'nhau', 'đi chợ', 'di cho', 'food'],
+  ],
+  ['housing', ['tiền nhà', 'tien nha', 'thuê nhà', 'thue nha', 'nhà trọ', 'nha tro']],
+  ['bills', ['điện', 'dien', 'nước', 'nuoc', 'internet', 'wifi', 'điện thoại', '4g', 'hoá đơn', 'hóa đơn', 'hoa don']],
+  ['shopping', ['mua', 'quần áo', 'quan ao', 'áo', 'giày', 'giay', 'shopee', 'lazada', 'tiki']],
+  ['entertainment', ['phim', 'game', 'du lịch', 'du lich', 'karaoke', 'netflix', 'spotify']],
+  ['health', ['thuốc', 'thuoc', 'bệnh viện', 'benh vien', 'khám', 'kham', 'gym']],
+  ['education', ['sách', 'sach', 'học', 'hoc', 'khoá học', 'khoa hoc']],
+];
+
+/** Whole-word match, so "ăn" does not match inside "xăng". */
+const hasWord = (text: string, word: string) =>
+  new RegExp(`(^|[^\\p{L}\\p{N}])${word}($|[^\\p{L}\\p{N}])`, 'u').test(text);
+
+export type QuickEntry = Omit<Transaction, 'id'>;
+
+/**
+ * Offline parser for quick entries like "cafe 35k" or "lương 20tr".
+ * Returns null when no amount can be found.
+ */
+export function quickParse(text: string, today = todayKey()): QuickEntry | null {
+  const lower = text.normalize('NFC').trim().toLowerCase();
+  const match = lower.match(/(\d[\d.,]*\s*(?:k|tr|m|tỷ|ty|b)?)(?![\p{L}\d])/u);
+  if (!match) return null;
+  const amount = parseVnd(match[1]);
+  if (!amount) return null;
+  const words = (lower.slice(0, match.index) + ' ' + lower.slice(match.index! + match[0].length)).trim();
+  const category =
+    QUICK_KEYWORDS.find(([, keywords]) => keywords.some((k) => hasWord(words, k)))?.[0] ?? 'other-expense';
+  const kind = getTransactionCategory(category).kind;
+  const note = text.replace(match[0].trim(), '').replace(/\s+/g, ' ').trim();
+  return { kind, category, amount, note, date: today };
 }

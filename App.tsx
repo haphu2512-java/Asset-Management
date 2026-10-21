@@ -5,6 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AdvisorScreen } from './src/screens/AdvisorScreen';
 import { AssetsScreen } from './src/screens/AssetsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { GoalsScreen } from './src/screens/GoalsScreen';
 import { OverviewScreen } from './src/screens/OverviewScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
 import { StoreProvider, useStore } from './src/store';
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'overview', label: 'Tổng quan', icon: '◉', Screen: OverviewScreen },
   { id: 'assets', label: 'Tài sản', icon: '◈', Screen: AssetsScreen },
   { id: 'transactions', label: 'Thu chi', icon: '⇅', Screen: TransactionsScreen },
+  { id: 'goals', label: 'Mục tiêu', icon: '◎', Screen: GoalsScreen },
   { id: 'advisor', label: 'AI', icon: '✦', Screen: AdvisorScreen },
 ] as const;
 

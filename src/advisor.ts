@@ -7,7 +7,9 @@ import {
   summarizeMonth,
   todayKey,
   getTransactionCategory,
+  goalProgress,
   type Asset,
+  type Goal,
   type Transaction,
 } from './finance';
 import { supabase } from './supabase';
@@ -16,6 +18,7 @@ import { supabase } from './supabase';
 export function buildFinanceSnapshot(
   assets: Asset[],
   transactions: Transaction[],
+  goals: Goal[] = [],
   now = new Date(),
 ): string {
   const lines: string[] = [];
@@ -52,6 +55,16 @@ export function buildFinanceSnapshot(
       lines.push(`${t.date} ${sign}${formatVnd(t.amount)} ${getTransactionCategory(t.category).label}${note}`);
     }
   }
+  if (goals.length > 0) {
+    lines.push('', 'MỤC TIÊU TIẾT KIỆM');
+    for (const g of goals) {
+      const p = goalProgress(g, now);
+      lines.push(
+        `- ${g.name}: đã có ${formatVnd(g.saved)}/${formatVnd(g.target)}, hạn ${g.deadline}, ` +
+          `cần ${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng${p.overdue ? ' (đã quá hạn)' : ''}`,
+      );
+    }
+  }
   return lines.join('\n');
 }
 
@@ -60,10 +73,11 @@ export async function getFinancialAdvice(
   assets: Asset[],
   transactions: Transaction[],
   question?: string,
+  goals: Goal[] = [],
 ): Promise<string> {
   const { data, error } = await supabase.functions.invoke('advisor', {
     body: {
-      snapshot: buildFinanceSnapshot(assets, transactions),
+      snapshot: buildFinanceSnapshot(assets, transactions, goals),
       question: question?.trim() ?? '',
       date: todayKey(),
     },
@@ -89,4 +103,20 @@ export async function getFinancialAdvice(
 /** Maps errors to a short Vietnamese message for the UI. */
 export function describeAdviceError(error: unknown): string {
   return error instanceof Error ? error.message : 'Đã có lỗi xảy ra.';
+}
+
+/** Asks the advisor how to reach one savings goal, given the user's current cash flow. */
+export function getGoalAdvice(
+  goal: Goal,
+  assets: Asset[],
+  transactions: Transaction[],
+  goals: Goal[],
+): Promise<string> {
+  const p = goalProgress(goal);
+  const question =
+    `Tôi muốn đạt mục tiêu "${goal.name.slice(0, 80)}": ${formatVnd(goal.target)} trước ngày ${goal.deadline}, ` +
+    `hiện đã có ${formatVnd(goal.saved)}. Theo tính toán cần để dành ${formatVnd(p.monthlyNeeded)}/tháng. ` +
+    'Với thu chi hiện tại, mục tiêu này có khả thi không? Mỗi tháng tôi nên để dành bao nhiêu, ' +
+    'cắt giảm khoản chi nào, và nên giữ khoản tiết kiệm ở đâu? Trả lời ngắn gọn.';
+  return getFinancialAdvice(assets, transactions, question, goals);
 }

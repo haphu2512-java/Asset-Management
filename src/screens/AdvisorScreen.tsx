@@ -5,7 +5,7 @@ import { useStore } from '../store';
 import { colors, ui } from '../theme';
 
 export function AdvisorScreen() {
-  const { assets, transactions } = useStore();
+  const { assets, transactions, goals } = useStore();
   const [question, setQuestion] = useState('');
   const [advice, setAdvice] = useState('');
   const [error, setError] = useState('');
@@ -15,7 +15,7 @@ export function AdvisorScreen() {
     setLoading(true);
     setError('');
     try {
-      setAdvice(await getFinancialAdvice(assets, transactions, question));
+      setAdvice(await getFinancialAdvice(assets, transactions, question, goals));
     } catch (e) {
       setError(describeAdviceError(e));
     } finally {

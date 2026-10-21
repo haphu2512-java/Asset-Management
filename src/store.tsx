@@ -10,11 +10,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Asset, CategoryId, Transaction, TransactionKind } from './finance';
+import type { Asset, CategoryId, Goal, Transaction, TransactionKind } from './finance';
+import { PRICE_MAX_AGE_MS, pricesAreStale, refreshPrices } from './prices';
 import { supabase } from './supabase';
 
 /** Local cache keys are scoped per user so accounts never see each other's data. */
-const cacheKey = (name: 'assets' | 'transactions', userId: string) => `${name}.v2:${userId}`;
+const cacheKey = (name: 'assets' | 'transactions' | 'goals', userId: string) => `${name}.v2:${userId}`;
 /** Older versions stored the Anthropic key on the device; it now lives on the server. */
 const LEGACY_KEYS = ['anthropicApiKey.v1', 'assets.v1', 'transactions.v1'];
 
@@ -24,6 +25,7 @@ type Store = {
   session: Session | null;
   assets: Asset[];
   transactions: Transaction[];
+  goals: Goal[];
   /** Last failed sync with the server, shown to the user until dismissed. */
   syncError: string | null;
   dismissSyncError: () => void;
@@ -31,6 +33,11 @@ type Store = {
   deleteAsset: (id: string) => Promise<void>;
   saveTransaction: (transaction: Transaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  /** Fetches market prices for stock/crypto holdings; resolves to symbols with no price. */
+  refreshMarketPrices: () => Promise<string[]>;
+  pricesRefreshing: boolean;
+  saveGoal: (goal: Goal) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -39,9 +46,10 @@ type Data = {
   owner: string | null;
   assets: Asset[];
   transactions: Transaction[];
+  goals: Goal[];
 };
 
-const EMPTY: Data = { owner: null, assets: [], transactions: [] };
+const EMPTY: Data = { owner: null, assets: [], transactions: [], goals: [] };
 
 const StoreContext = createContext<Store | null>(null);
 
@@ -62,6 +70,20 @@ function toAsset(row: any): Asset {
     category: row.category as CategoryId,
     amount: Number(row.amount) || 0,
     updatedAt: row.updated_at,
+    symbol: row.symbol ?? undefined,
+    quantity: row.quantity == null ? undefined : Number(row.quantity),
+    price: row.price == null ? undefined : Number(row.price),
+    priceUpdatedAt: row.price_updated_at ?? undefined,
+  };
+}
+
+function toGoal(row: any): Goal {
+  return {
+    id: row.id,
+    name: row.name,
+    target: Number(row.target) || 0,
+    saved: Number(row.saved) || 0,
+    deadline: row.deadline,
   };
 }
 
@@ -90,6 +112,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [data, setData] = useState<Data>(EMPTY);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
 
   const user = session?.user ?? null;
   // Token refreshes hand out a new user object; key effects on the id so they don't reload.
@@ -119,23 +142,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoaded(false);
       AsyncStorage.multiRemove(LEGACY_KEYS).catch(() => {});
 
-      const [cachedAssets, cachedTx] = await Promise.all([
+      const [cachedAssets, cachedTx, cachedGoals] = await Promise.all([
         readCache<Asset>(cacheKey('assets', id)),
         readCache<Transaction>(cacheKey('transactions', id)),
+        readCache<Goal>(cacheKey('goals', id)),
       ]);
-      let next: Data = { owner: id, assets: cachedAssets, transactions: cachedTx };
+      let next: Data = { owner: id, assets: cachedAssets, transactions: cachedTx, goals: cachedGoals };
 
       try {
-        const [assetsRes, txRes] = await Promise.all([
+        const [assetsRes, txRes, goalsRes] = await Promise.all([
           supabase.from('assets').select('*').order('updated_at', { ascending: false }),
           supabase.from('transactions').select('*').order('date', { ascending: false }),
+          supabase.from('goals').select('*').order('created_at', { ascending: true }),
         ]);
         if (assetsRes.error) throw assetsRes.error;
         if (txRes.error) throw txRes.error;
+        if (goalsRes.error) throw goalsRes.error;
         next = {
           owner: id,
           assets: (assetsRes.data ?? []).map(toAsset),
           transactions: (txRes.data ?? []).map(toTransaction),
+          goals: (goalsRes.data ?? []).map(toGoal),
         };
         if (isMounted) setSyncError(null);
       } catch (err) {
@@ -164,6 +191,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(cacheKey('transactions', userId), JSON.stringify(data.transactions)).catch(
       () => {},
     );
+    AsyncStorage.setItem(cacheKey('goals', userId), JSON.stringify(data.goals)).catch(() => {});
   }, [userId, data]);
 
   const fail = (message: string, error: unknown) => {
@@ -184,6 +212,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         category: asset.category,
         amount: asset.amount,
         updated_at: asset.updatedAt,
+        symbol: asset.symbol ?? null,
+        quantity: asset.quantity ?? null,
+        price: asset.price ?? null,
+        price_updated_at: asset.priceUpdatedAt ?? null,
       });
       if (error) {
         setData((d) => ({
@@ -254,12 +286,88 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [userId],
   );
 
+  const refreshMarketPrices = useCallback(async () => {
+    setPricesRefreshing(true);
+    try {
+      const { updated, missing } = await refreshPrices(dataRef.current.assets);
+      await Promise.all(updated.map(saveAsset));
+      return missing;
+    } finally {
+      setPricesRefreshing(false);
+    }
+  }, [saveAsset]);
+
+  // Keep holdings at market value: refresh after loading, after a holding changes, and periodically.
+  // Automatic refreshes are spaced out so a symbol with no price can't cause a refresh loop.
+  const lastAutoRefresh = useRef(0);
+  const holdingsKey = data.assets
+    .filter((a) => a.symbol && a.quantity)
+    .map((a) => `${a.id}:${a.symbol}:${a.quantity}`)
+    .join('|');
+  useEffect(() => {
+    if (!loaded || !userId || data.owner !== userId) return;
+    const maybeRefresh = (force: boolean) => {
+      if (!pricesAreStale(dataRef.current.assets)) return;
+      if (!force && Date.now() - lastAutoRefresh.current < PRICE_MAX_AGE_MS) return;
+      lastAutoRefresh.current = Date.now();
+      refreshMarketPrices().catch(() => {});
+    };
+    // A new or edited holding needs its price right away.
+    maybeRefresh(true);
+    const timer = setInterval(() => maybeRefresh(false), 60 * 1000);
+    return () => clearInterval(timer);
+  }, [loaded, userId, data.owner, holdingsKey, refreshMarketPrices]);
+
+  const saveGoal = useCallback(
+    async (goal: Goal) => {
+      if (!userId) return;
+      const prev = dataRef.current.goals.find((g) => g.id === goal.id);
+      setData((d) => ({ ...d, goals: upsert(d.goals, goal) }));
+
+      const { error } = await supabase.from('goals').upsert({
+        id: goal.id,
+        user_id: userId,
+        name: goal.name,
+        target: goal.target,
+        saved: goal.saved,
+        deadline: goal.deadline,
+      });
+      if (error) {
+        setData((d) => ({
+          ...d,
+          goals: prev ? upsert(d.goals, prev) : d.goals.filter((g) => g.id !== goal.id),
+        }));
+        fail('Không lưu được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
+      }
+    },
+    [userId],
+  );
+
+  const deleteGoal = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+      const prev = dataRef.current.goals.find((g) => g.id === id);
+      setData((d) => ({ ...d, goals: d.goals.filter((g) => g.id !== id) }));
+
+      const { error } = await supabase.from('goals').delete().eq('id', id);
+      if (error) {
+        if (prev) setData((d) => ({ ...d, goals: upsert(d.goals, prev) }));
+        fail('Không xoá được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
+      }
+    },
+    [userId],
+  );
+
   const signOut = useCallback(async () => {
     const id = userId;
     await supabase.auth.signOut();
     // Don't leave a signed-out user's financial data on the device.
     if (id) {
-      AsyncStorage.multiRemove([cacheKey('assets', id), cacheKey('transactions', id)]).catch(() => {});
+      AsyncStorage.multiRemove([
+        cacheKey('assets', id),
+        cacheKey('transactions', id),
+        cacheKey('goals', id),
+      ]).catch(() => {});
     }
   }, [userId]);
 
@@ -270,17 +378,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       session,
       assets: data.assets,
       transactions: data.transactions,
+      goals: data.goals,
       syncError,
       dismissSyncError: () => setSyncError(null),
       saveAsset,
       deleteAsset,
       saveTransaction,
       deleteTransaction,
+      refreshMarketPrices,
+      pricesRefreshing,
+      saveGoal,
+      deleteGoal,
       signOut,
     }),
     // `user` is tracked via userId: a refreshed token must not re-render consumers needlessly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, userId, session, data, syncError, saveAsset, deleteAsset, saveTransaction, deleteTransaction, signOut],
+    [loaded, userId, session, data, syncError, saveAsset, deleteAsset, saveTransaction, deleteTransaction, refreshMarketPrices, pricesRefreshing, saveGoal, deleteGoal, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
