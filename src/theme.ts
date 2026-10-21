@@ -1,0 +1,68 @@
+import { StyleSheet } from 'react-native';
+
+export const colors = {
+  background: '#F4F6F8',
+  card: '#FFFFFF',
+  text: '#1B1F24',
+  muted: '#6B7280',
+  border: '#E5E7EB',
+  primary: '#0F766E',
+  income: '#2E7D32',
+  expense: '#C62828',
+};
+
+export const ui = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 16, paddingBottom: 96, gap: 12 },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    padding: 16,
+    gap: 8,
+  },
+  title: { fontSize: 22, fontWeight: '700', color: colors.text },
+  heading: { fontSize: 16, fontWeight: '600', color: colors.text },
+  label: { fontSize: 13, color: colors.muted },
+  text: { fontSize: 15, color: colors.text },
+  big: { fontSize: 28, fontWeight: '700', color: colors.text },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: '#FFFFFF',
+  },
+  button: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+  },
+  fabText: { color: '#FFFFFF', fontSize: 30, lineHeight: 32 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#FFFFFF',
+  },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+});
