@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import {
   formatMonth,
   formatVnd,
@@ -69,35 +68,54 @@ export async function getFinancialAdvice(
   transactions: Transaction[],
   question?: string,
 ): Promise<string> {
-  // The key is the user's own and stays on their device; the app has no backend.
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   const snapshot = buildFinanceSnapshot(assets, transactions);
   const ask = question?.trim()
     ? `Câu hỏi của tôi: ${question.trim()}`
     : 'Hãy phân tích tình hình tài chính của tôi và cho lời khuyên.';
 
-  const response = await client.beta.messages.create({
-    model: 'claude-opus-5-5',
-    max_tokens: 16000,
-    output_config: { effort: 'medium' },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `Số liệu tài chính hiện tại của tôi (ngày ${now()}):\n\n${snapshot}\n\n${ask}`,
-      },
-    ],
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `Số liệu tài chính hiện tại của tôi (ngày ${now()}):\n\n${snapshot}\n\n${ask}`,
+        },
+      ],
+    }),
   });
 
-  if (response.stop_reason === 'refusal') {
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    const msg = errorData?.error?.message;
+    if (res.status === 401) {
+      throw new Error('API key không hợp lệ. Hãy kiểm tra lại trong phần Cài đặt.');
+    }
+    if (res.status === 429) {
+      throw new Error('Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
+    }
+    throw new Error(msg ? `Lỗi AI: ${msg}` : `Lỗi từ máy chủ AI (${res.status}). Hãy thử lại.`);
+  }
+
+  const data = await res.json();
+  if (data.stop_reason === 'refusal') {
     throw new Error('AI từ chối trả lời yêu cầu này. Hãy thử đặt câu hỏi khác.');
   }
-  const text = response.content
-    .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+
+  const text = (data.content || [])
+    .flatMap((block: { type: string; text?: string }) => (block.type === 'text' && block.text ? [block.text] : []))
     .join('\n')
     .trim();
+
   if (!text) throw new Error('AI không trả về nội dung. Hãy thử lại.');
   return text;
 }
@@ -107,19 +125,7 @@ function now(): string {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
-/** Maps SDK errors to a short Vietnamese message for the UI. */
+/** Maps errors to a short Vietnamese message for the UI. */
 export function describeAdviceError(error: unknown): string {
-  if (error instanceof Anthropic.AuthenticationError) {
-    return 'API key không hợp lệ. Hãy kiểm tra lại trong phần Cài đặt.';
-  }
-  if (error instanceof Anthropic.RateLimitError) {
-    return 'Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.';
-  }
-  if (error instanceof Anthropic.APIConnectionError) {
-    return 'Không kết nối được tới máy chủ AI. Hãy kiểm tra mạng.';
-  }
-  if (error instanceof Anthropic.APIError) {
-    return `Lỗi từ máy chủ AI (${error.status ?? 'không rõ'}). Hãy thử lại.`;
-  }
   return error instanceof Error ? error.message : 'Đã có lỗi xảy ra.';
 }
