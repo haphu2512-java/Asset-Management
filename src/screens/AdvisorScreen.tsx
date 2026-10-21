@@ -1,32 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { describeAdviceError, getFinancialAdvice } from '../advisor';
 import { useStore } from '../store';
 import { colors, ui } from '../theme';
 
 export function AdvisorScreen() {
-  const { assets, transactions, apiKey, setApiKey } = useStore();
-  const [keyDraft, setKeyDraft] = useState(apiKey);
-  const [showSettings, setShowSettings] = useState(!apiKey);
+  const { assets, transactions } = useStore();
   const [question, setQuestion] = useState('');
   const [advice, setAdvice] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setKeyDraft(apiKey);
-    if (apiKey) setShowSettings(false);
-  }, [apiKey]);
-
   const ask = async () => {
-    if (!apiKey) {
-      setShowSettings(true);
-      return setError('Hãy nhập API key trước.');
-    }
     setLoading(true);
     setError('');
     try {
-      setAdvice(await getFinancialAdvice(apiKey, assets, transactions, question));
+      setAdvice(await getFinancialAdvice(assets, transactions, question));
     } catch (e) {
       setError(describeAdviceError(e));
     } finally {
@@ -39,7 +28,7 @@ export function AdvisorScreen() {
       <View style={ui.card}>
         <Text style={ui.heading}>Cố vấn tài chính AI</Text>
         <Text style={ui.label}>
-          AI đọc số liệu tài sản và thu chi 3 tháng gần nhất của bạn, rồi đưa ra nhận xét và lời khuyên.
+          AI đọc số liệu tài sản và thu chi 3 tháng gần nhất của bạn, rồi đưa ra nhận xét và lời khuyên. Số liệu (kể cả ghi chú giao dịch) được gửi tới Anthropic để phân tích khi bạn bấm Phân tích.
         </Text>
         <TextInput
           placeholderTextColor={colors.muted}
@@ -62,34 +51,6 @@ export function AdvisorScreen() {
           </Text>
         </View>
       ) : null}
-
-      <View style={ui.card}>
-        <Pressable onPress={() => setShowSettings((v) => !v)} style={ui.row}>
-          <Text style={ui.heading}>Cài đặt API key</Text>
-          <Text style={ui.label}>{apiKey ? 'Đã lưu' : 'Chưa có'}</Text>
-        </Pressable>
-        {showSettings ? (
-          <>
-            <Text style={ui.label}>
-              Tạo API key tại console.anthropic.com. Key chỉ được lưu trên điện thoại này và gửi thẳng tới
-              Anthropic khi bạn bấm Phân tích.
-            </Text>
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={ui.input}
-              value={keyDraft}
-              onChangeText={setKeyDraft}
-              placeholder="sk-ant-..."
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-            />
-            <Pressable style={ui.button} onPress={() => setApiKey(keyDraft.trim())}>
-              <Text style={ui.buttonText}>Lưu key</Text>
-            </Pressable>
-          </>
-        ) : null}
-      </View>
     </ScrollView>
   );
 }

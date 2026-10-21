@@ -5,19 +5,12 @@ import {
   shiftMonth,
   summarize,
   summarizeMonth,
+  todayKey,
   getTransactionCategory,
   type Asset,
   type Transaction,
 } from './finance';
-
-const SYSTEM_PROMPT = `Bạn là cố vấn tài chính cá nhân cho một người dùng ở Việt Nam. Bạn nhận được số liệu tài sản và thu chi của họ (đơn vị VND).
-
-Hãy trả lời bằng tiếng Việt, ngắn gọn, thân thiện và dựa trên chính số liệu được cung cấp:
-1. Nhận xét tổng quan về tình hình tài chính (tài sản ròng, cơ cấu tài sản, dòng tiền tháng này so với các tháng trước).
-2. Chỉ ra 2-3 điểm đáng chú ý, ví dụ khoản chi chiếm tỷ trọng lớn, tỷ lệ tiết kiệm, mức độ rủi ro của danh mục, quỹ dự phòng.
-3. Đưa ra 3-5 lời khuyên cụ thể, có con số khi có thể.
-
-Nếu dữ liệu còn ít, hãy nói rõ và gợi ý họ nên nhập thêm gì. Không khuyên mua mã cổ phiếu hay đồng crypto cụ thể. Trình bày dạng văn bản thuần với tiêu đề ngắn và gạch đầu dòng "-", không dùng ký hiệu markdown như ** hay #.`;
+import { supabase } from './supabase';
 
 /** Builds a compact plain-text snapshot of the user's finances for the model. */
 export function buildFinanceSnapshot(
@@ -62,67 +55,35 @@ export function buildFinanceSnapshot(
   return lines.join('\n');
 }
 
+/** Asks the `advisor` Edge Function (which holds the Anthropic key) for advice. */
 export async function getFinancialAdvice(
-  apiKey: string,
   assets: Asset[],
   transactions: Transaction[],
   question?: string,
 ): Promise<string> {
-  const snapshot = buildFinanceSnapshot(assets, transactions);
-  const ask = question?.trim()
-    ? `Câu hỏi của tôi: ${question.trim()}`
-    : 'Hãy phân tích tình hình tài chính của tôi và cho lời khuyên.';
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+  const { data, error } = await supabase.functions.invoke('advisor', {
+    body: {
+      snapshot: buildFinanceSnapshot(assets, transactions),
+      question: question?.trim() ?? '',
+      date: todayKey(),
     },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `Số liệu tài chính hiện tại của tôi (ngày ${now()}):\n\n${snapshot}\n\n${ask}`,
-        },
-      ],
-    }),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => null);
-    const msg = errorData?.error?.message;
-    if (res.status === 401) {
-      throw new Error('API key không hợp lệ. Hãy kiểm tra lại trong phần Cài đặt.');
-    }
-    if (res.status === 429) {
+  if (error) {
+    const res = (error as { context?: Response }).context;
+    const body = res ? await res.json().catch(() => null) : null;
+    if (res?.status === 429) {
       throw new Error('Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
     }
-    throw new Error(msg ? `Lỗi AI: ${msg}` : `Lỗi từ máy chủ AI (${res.status}). Hãy thử lại.`);
+    if (res?.status === 401) {
+      throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+    }
+    throw new Error(body?.error ? `Lỗi AI: ${body.error}` : 'Không kết nối được cố vấn AI. Hãy thử lại.');
   }
 
-  const data = await res.json();
-  if (data.stop_reason === 'refusal') {
-    throw new Error('AI từ chối trả lời yêu cầu này. Hãy thử đặt câu hỏi khác.');
-  }
-
-  const text = (data.content || [])
-    .flatMap((block: { type: string; text?: string }) => (block.type === 'text' && block.text ? [block.text] : []))
-    .join('\n')
-    .trim();
-
+  const text = typeof data?.text === 'string' ? data.text.trim() : '';
   if (!text) throw new Error('AI không trả về nội dung. Hãy thử lại.');
   return text;
-}
-
-function now(): string {
-  const d = new Date();
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
 /** Maps errors to a short Vietnamese message for the UI. */

@@ -18,7 +18,7 @@ const TABS = [
 ] as const;
 
 function Main() {
-  const { loaded, user, signOut } = useStore();
+  const { loaded, user, signOut, syncError, dismissSyncError } = useStore();
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('overview');
   const current = TABS.find((t) => t.id === tab)!;
 
@@ -66,6 +66,16 @@ function Main() {
           </Text>
         </Pressable>
       </View>
+
+      {syncError ? (
+        <Pressable
+          onPress={dismissSyncError}
+          style={{ marginHorizontal: 16, marginVertical: 4, padding: 10, borderRadius: 8, backgroundColor: '#FFEBEE' }}
+          accessibilityRole="alert"
+        >
+          <Text style={{ fontSize: 12, color: colors.expense }}>{syncError} (chạm để ẩn)</Text>
+        </Pressable>
+      ) : null}
 
       {/* Screen Body */}
       <View style={{ flex: 1 }}>
