@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { AssetForm } from '../components/AssetForm';
+import { CategoryBadge, getCategoryIcon, Icon } from '../components/Icon';
 import { CATEGORIES, formatDigits, formatVnd, isMarketPriced, summarize, type Asset } from '../finance';
 import { useStore } from '../store';
 import { colors, ui } from '../theme';
@@ -33,7 +34,10 @@ export function AssetsScreen() {
       <ScrollView contentContainerStyle={ui.content}>
         {assets.length === 0 ? (
           <View style={ui.card}>
-            <Text style={ui.heading}>Chưa có tài sản</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Icon name="assets" size={18} color={colors.primary} />
+              <Text style={ui.heading}>Chưa có tài sản</Text>
+            </View>
             <Text style={ui.label}>
               Bấm nút [+] ở góc phải dưới để thêm tiền mặt, cổ phiếu, crypto, cho vay hoặc khoản nợ.
             </Text>
@@ -43,14 +47,20 @@ export function AssetsScreen() {
         {hasMarketAssets ? (
           <View style={[ui.card, { paddingVertical: 10 }]}>
             <View style={ui.row}>
-              <Text style={ui.label}>{lastPriceUpdate(assets)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Icon name="clock" size={13} color={colors.muted} />
+                <Text style={ui.label}>{lastPriceUpdate(assets)}</Text>
+              </View>
               <Pressable
                 onPress={refresh}
                 disabled={pricesRefreshing}
                 hitSlop={8}
                 style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
                   paddingHorizontal: 8,
-                  paddingVertical: 3,
+                  paddingVertical: 4,
                   borderWidth: 1,
                   borderColor: colors.border,
                   borderRadius: 4,
@@ -60,9 +70,12 @@ export function AssetsScreen() {
                 {pricesRefreshing ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12 }}>
-                    Cập nhật giá
-                  </Text>
+                  <>
+                    <Icon name="refresh" size={12} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12 }}>
+                      Cập nhật giá
+                    </Text>
+                  </>
                 )}
               </Pressable>
             </View>
@@ -77,8 +90,13 @@ export function AssetsScreen() {
           return (
             <View key={category.id} style={ui.card}>
               <View style={[ui.row, { paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={[ui.dot, { backgroundColor: category.color }]} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <CategoryBadge
+                    icon={getCategoryIcon(category.id)}
+                    color={category.color}
+                    size={28}
+                    iconSize={14}
+                  />
                   <Text style={[ui.heading, { fontSize: 14 }]}>{category.label.toUpperCase()}</Text>
                   <Text style={ui.label}>({items.length})</Text>
                 </View>
@@ -121,16 +139,25 @@ export function AssetsScreen() {
         {assets.length > 0 ? (
           <View style={ui.card}>
             <View style={ui.row}>
-              <Text style={ui.label}>Tổng tài sản</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Icon name="trending-up" size={13} color={colors.primary} />
+                <Text style={ui.label}>Tổng tài sản</Text>
+              </View>
               <Text style={[ui.text, { fontWeight: '600' }]}>{formatVnd(s.totalAssets)}</Text>
             </View>
             <View style={ui.row}>
-              <Text style={[ui.label, { color: colors.expense }]}>Tổng nợ</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Icon name="debt" size={13} color={colors.expense} />
+                <Text style={[ui.label, { color: colors.expense }]}>Tổng nợ</Text>
+              </View>
               <Text style={[ui.text, { color: colors.expense, fontWeight: '600' }]}>-{formatVnd(s.totalDebt)}</Text>
             </View>
             <View style={ui.divider} />
             <View style={ui.row}>
-              <Text style={ui.heading}>Tài sản ròng</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Icon name="shield" size={15} color={colors.text} />
+                <Text style={ui.heading}>Tài sản ròng</Text>
+              </View>
               <Text style={ui.heading}>{formatVnd(s.netWorth)}</Text>
             </View>
           </View>
@@ -138,7 +165,7 @@ export function AssetsScreen() {
       </ScrollView>
 
       <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm tài sản">
-        <Text style={ui.fabText}>+</Text>
+        <Icon name="plus" size={22} color="#FFFFFF" strokeWidth={2.5} />
       </Pressable>
 
       <AssetForm

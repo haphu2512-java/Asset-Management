@@ -5,6 +5,7 @@ import type { Transaction } from '../finance';
 import { describeEntry, parseQuickEntry, type ReceiptImage } from '../quickEntry';
 import { newId } from '../store';
 import { colors, ui } from '../theme';
+import { Icon } from './Icon';
 
 type Props = { onSave: (transaction: Transaction) => Promise<void> };
 
@@ -91,6 +92,9 @@ export function QuickEntryBar({ onSave }: Props) {
           <Pressable
             onPress={submitText}
             style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
               paddingHorizontal: 12,
               paddingVertical: 7,
               backgroundColor: colors.primary,
@@ -98,6 +102,7 @@ export function QuickEntryBar({ onSave }: Props) {
             }}
             accessibilityLabel="Ghi nhanh"
           >
+            <Icon name="check" size={13} color="#FFFFFF" strokeWidth={2.5} />
             <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Ghi</Text>
           </Pressable>
         ) : (
@@ -105,6 +110,9 @@ export function QuickEntryBar({ onSave }: Props) {
             onPress={chooseReceipt}
             hitSlop={6}
             style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
               paddingHorizontal: 10,
               paddingVertical: 7,
               borderWidth: 1,
@@ -114,6 +122,7 @@ export function QuickEntryBar({ onSave }: Props) {
             }}
             accessibilityLabel="Quét hoá đơn"
           >
+            <Icon name="camera" size={13} color={colors.muted} />
             <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '600' }}>Hóa đơn</Text>
           </Pressable>
         )}

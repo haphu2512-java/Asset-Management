@@ -83,12 +83,15 @@ export function AssetForm({ visible, asset, onClose, onSave, onDelete }: Props) 
       onDelete={asset ? () => (onDelete(asset.id), onClose()) : undefined}
       error={error}
     >
-      <Field label="Loại">
+      <Field label="Loại" icon="assets">
         <Chips options={CATEGORIES} value={category} onChange={(id) => setCategory(id as CategoryId)} />
       </Field>
       {supportsMarket ? (
         <>
-          <Field label={category === 'stock' ? 'Mã cổ phiếu (tuỳ chọn)' : 'Mã coin (tuỳ chọn)'}>
+          <Field
+            label={category === 'stock' ? 'Mã cổ phiếu (tuỳ chọn)' : 'Mã coin (tuỳ chọn)'}
+            icon={category === 'stock' ? 'stock' : 'crypto'}
+          >
             <TextInput
               placeholderTextColor={colors.muted}
               style={ui.input}
@@ -100,7 +103,7 @@ export function AssetForm({ visible, asset, onClose, onSave, onDelete }: Props) 
             />
           </Field>
           {symbol.trim() ? (
-            <Field label="Số lượng đang nắm giữ">
+            <Field label="Số lượng đang nắm giữ" icon="pie-chart">
               <TextInput
                 placeholderTextColor={colors.muted}
                 style={ui.input}
@@ -116,7 +119,7 @@ export function AssetForm({ visible, asset, onClose, onSave, onDelete }: Props) 
           ) : null}
         </>
       ) : null}
-      <Field label="Tên (tuỳ chọn)">
+      <Field label="Tên (tuỳ chọn)" icon="edit">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -126,7 +129,7 @@ export function AssetForm({ visible, asset, onClose, onSave, onDelete }: Props) 
         />
       </Field>
       {tracked ? null : (
-        <Field label="Số tiền (VND)">
+        <Field label="Số tiền (VND)" icon="wallet">
           <TextInput
             placeholderTextColor={colors.muted}
             style={ui.input}

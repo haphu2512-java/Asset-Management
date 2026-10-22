@@ -64,7 +64,7 @@ export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
       onDelete={goal ? () => (onDelete(goal.id), onClose()) : undefined}
       error={error}
     >
-      <Field label="Tên mục tiêu">
+      <Field label="Tên mục tiêu" icon="goals">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -73,7 +73,7 @@ export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
           placeholder="Ví dụ: Quỹ dự phòng, Mua xe, Du lịch Nhật"
         />
       </Field>
-      <Field label="Số tiền cần có (VND)">
+      <Field label="Số tiền cần có (VND)" icon="wallet">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -83,7 +83,7 @@ export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
           autoCapitalize="none"
         />
       </Field>
-      <Field label="Đã để dành được (VND)">
+      <Field label="Đã để dành được (VND)" icon="saving">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -93,8 +93,8 @@ export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
           autoCapitalize="none"
         />
       </Field>
-      <Field label="Hạn hoàn thành (NNNN-TT-NN)">
-        <Chips options={DURATIONS} value="" onChange={(id) => setDeadline(addMonths(Number(id)))} />
+      <Field label="Hạn hoàn thành (NNNN-TT-NN)" icon="calendar">
+        <Chips options={DURATIONS} value="" onChange={(id) => setDeadline(addMonths(Number(id)))} showIcons={false} />
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}

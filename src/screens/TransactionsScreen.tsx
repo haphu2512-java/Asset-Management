@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { CategoryBadge, getCategoryIcon, Icon } from '../components/Icon';
 import { QuickEntryBar } from '../components/QuickEntryBar';
 import { TransactionForm } from '../components/TransactionForm';
 import {
@@ -41,49 +42,69 @@ export function TransactionsScreen() {
             onPress={() => setMonth(shiftMonth(month, -1))}
             hitSlop={12}
             style={{
-              paddingHorizontal: 12,
-              paddingVertical: 4,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
               borderWidth: 1,
               borderColor: colors.border,
               borderRadius: 4,
             }}
           >
-            <Text style={{ fontSize: 13, color: colors.text, fontWeight: '600' }}>‹ Tháng trước</Text>
+            <Icon name="chevron-left" size={13} color={colors.text} />
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: '600' }}>Tháng trước</Text>
           </Pressable>
 
-          <Text style={[ui.heading, { fontSize: 14 }]}>{formatMonth(month)}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Icon name="calendar" size={15} color={colors.primary} />
+            <Text style={[ui.heading, { fontSize: 14 }]}>{formatMonth(month)}</Text>
+          </View>
 
           <Pressable
             onPress={() => setMonth(shiftMonth(month, 1))}
             hitSlop={12}
             style={{
-              paddingHorizontal: 12,
-              paddingVertical: 4,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
               borderWidth: 1,
               borderColor: colors.border,
               borderRadius: 4,
             }}
           >
-            <Text style={{ fontSize: 13, color: colors.text, fontWeight: '600' }}>Tháng sau ›</Text>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: '600' }}>Tháng sau</Text>
+            <Icon name="chevron-right" size={13} color={colors.text} />
           </Pressable>
         </View>
 
         {/* Month cash flow summary breakdown */}
         <View style={[ui.card, { flexDirection: 'row', paddingVertical: 10 }]}>
           <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: colors.borderSubtle, paddingRight: 8 }}>
-            <Text style={ui.label}>TỔNG THU</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Icon name="trending-up" size={12} color={colors.income} />
+              <Text style={ui.label}>TỔNG THU</Text>
+            </View>
             <Text style={[ui.text, { color: colors.income, fontWeight: '700', marginTop: 2 }]}>
               +{formatVnd(summary.income)}
             </Text>
           </View>
           <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: colors.borderSubtle, paddingHorizontal: 8 }}>
-            <Text style={ui.label}>TỔNG CHI</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Icon name="trending-down" size={12} color={colors.expense} />
+              <Text style={ui.label}>TỔNG CHI</Text>
+            </View>
             <Text style={[ui.text, { color: colors.expense, fontWeight: '700', marginTop: 2 }]}>
               -{formatVnd(summary.expense)}
             </Text>
           </View>
           <View style={{ flex: 1, paddingLeft: 8 }}>
-            <Text style={ui.label}>CÒN LẠI</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Icon name="wallet" size={12} color={colors.muted} />
+              <Text style={ui.label}>CÒN LẠI</Text>
+            </View>
             <Text
               style={[
                 ui.text,
@@ -102,7 +123,10 @@ export function TransactionsScreen() {
         {/* Transaction log */}
         <View style={ui.card}>
           <View style={[ui.row, { paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
-            <Text style={[ui.label, { fontWeight: '700' }]}>DANH SÁCH GIAO DỊCH</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Icon name="transactions" size={14} color={colors.muted} />
+              <Text style={[ui.label, { fontWeight: '700' }]}>DANH SÁCH GIAO DỊCH</Text>
+            </View>
             <Text style={ui.label}>{items.length} mục</Text>
           </View>
 
@@ -124,11 +148,16 @@ export function TransactionsScreen() {
                       paddingVertical: 8,
                       borderTopWidth: idx > 0 ? 1 : 0,
                       borderTopColor: colors.borderSubtle,
-                      gap: 8,
+                      gap: 10,
                     },
                   ]}
                 >
-                  <View style={[ui.dot, { backgroundColor: category.color }]} />
+                  <CategoryBadge
+                    icon={getCategoryIcon(t.category)}
+                    color={category.color}
+                    size={32}
+                    iconSize={15}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={[ui.text, { fontWeight: '500' }]}>{t.note || category.label}</Text>
                     <Text style={ui.label}>
@@ -155,7 +184,7 @@ export function TransactionsScreen() {
       </ScrollView>
 
       <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm giao dịch">
-        <Text style={ui.fabText}>+</Text>
+        <Icon name="plus" size={22} color="#FFFFFF" strokeWidth={2.5} />
       </Pressable>
 
       <TransactionForm

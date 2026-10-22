@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { describeAdviceError, getGoalAdvice } from '../advisor';
 import { GoalForm } from '../components/GoalForm';
+import { Icon } from '../components/Icon';
 import { formatVnd, goalProgress, parseVnd, type Goal } from '../finance';
 import { useStore } from '../store';
 import { colors, ui } from '../theme';
@@ -43,18 +44,25 @@ function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
   return (
     <View style={ui.card}>
       <View style={ui.row}>
-        <Text style={[ui.heading, { flex: 1 }]}>{goal.name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+          <Icon name="goals" size={16} color={colors.primary} />
+          <Text style={[ui.heading, { flex: 1 }]}>{goal.name}</Text>
+        </View>
         <Pressable
           onPress={onEdit}
           hitSlop={8}
           style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
             paddingHorizontal: 8,
-            paddingVertical: 2,
+            paddingVertical: 3,
             borderWidth: 1,
             borderColor: colors.border,
             borderRadius: 4,
           }}
         >
+          <Icon name="edit" size={12} color={colors.muted} />
           <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500' }}>Sửa</Text>
         </Pressable>
       </View>
@@ -76,10 +84,18 @@ function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
       </View>
 
       <View style={ui.row}>
-        <Text style={ui.label}>
-          {Math.round(p.ratio * 100)}% hoàn thành · Hạn {formatDate(goal.deadline)}
-        </Text>
-        {done ? <Text style={[ui.label, { color: colors.income, fontWeight: '600' }]}>Đã đạt</Text> : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="calendar" size={12} color={colors.muted} />
+          <Text style={ui.label}>
+            {Math.round(p.ratio * 100)}% hoàn thành · Hạn {formatDate(goal.deadline)}
+          </Text>
+        </View>
+        {done ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Icon name="check" size={12} color={colors.income} strokeWidth={2.5} />
+            <Text style={[ui.label, { color: colors.income, fontWeight: '600' }]}>Đã đạt</Text>
+          </View>
+        ) : null}
       </View>
 
       {!done ? (
@@ -103,7 +119,11 @@ function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
           autoCapitalize="none"
           onSubmitEditing={contribute}
         />
-        <Pressable style={[ui.button, { paddingVertical: 7, paddingHorizontal: 12 }]} onPress={contribute}>
+        <Pressable
+          style={[ui.button, { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 12 }]}
+          onPress={contribute}
+        >
+          <Icon name="plus" size={13} color="#FFFFFF" strokeWidth={2.5} />
           <Text style={[ui.buttonText, { fontSize: 13 }]}>Góp tiền</Text>
         </Pressable>
       </View>
@@ -116,14 +136,20 @@ function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
           marginTop: 2,
           paddingVertical: 4,
           alignSelf: 'flex-start',
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 5,
         }}
       >
         {loading ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
-            Tư vấn cách đạt mục tiêu
-          </Text>
+          <>
+            <Icon name="sparkles" size={14} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
+              Tư vấn cách đạt mục tiêu
+            </Text>
+          </>
         )}
       </Pressable>
 
@@ -155,7 +181,10 @@ export function GoalsScreen() {
       <ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
         {goals.length === 0 ? (
           <View style={ui.card}>
-            <Text style={ui.heading}>Chưa có mục tiêu</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Icon name="goals" size={18} color={colors.primary} />
+              <Text style={ui.heading}>Chưa có mục tiêu</Text>
+            </View>
             <Text style={ui.label}>
               Bấm nút [+] để lập kế hoạch tài chính (ví dụ: Mua nhà, Mua xe, Quỹ dự phòng). Hệ thống sẽ tính số tiền cần tích lũy mỗi tháng.
             </Text>
@@ -167,7 +196,7 @@ export function GoalsScreen() {
       </ScrollView>
 
       <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm mục tiêu">
-        <Text style={ui.fabText}>+</Text>
+        <Icon name="plus" size={22} color="#FFFFFF" strokeWidth={2.5} />
       </Pressable>
 
       <GoalForm
@@ -180,3 +209,4 @@ export function GoalsScreen() {
     </View>
   );
 }
+

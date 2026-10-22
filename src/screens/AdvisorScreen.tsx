@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { describeAdviceError, getFinancialAdvice } from '../advisor';
+import { Icon } from '../components/Icon';
 import { useStore } from '../store';
 import { colors, ui } from '../theme';
 
@@ -26,7 +27,10 @@ export function AdvisorScreen() {
   return (
     <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
       <View style={ui.card}>
-        <Text style={ui.heading}>Cố vấn tài chính</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Icon name="advisor" size={18} color={colors.primary} />
+          <Text style={ui.heading}>Cố vấn tài chính</Text>
+        </View>
         <Text style={ui.label}>
           Hệ thống tổng hợp tình hình tài sản, nợ và thu chi 3 tháng gần nhất để phân tích và đưa ra khuyến nghị thực tế.
         </Text>
@@ -38,11 +42,18 @@ export function AdvisorScreen() {
           placeholder="Nhập câu hỏi cụ thể (ví dụ: Tỷ lệ phân bổ tiền mặt của tôi đã an toàn chưa?)"
           multiline
         />
-        <Pressable style={[ui.button, loading && { opacity: 0.6 }]} onPress={ask} disabled={loading}>
+        <Pressable
+          style={[ui.button, { flexDirection: 'row', alignItems: 'center', gap: 6 }, loading && { opacity: 0.6 }]}
+          onPress={ask}
+          disabled={loading}
+        >
           {loading ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
-            <Text style={ui.buttonText}>Bắt đầu phân tích</Text>
+            <>
+              <Icon name="sparkles" size={15} color="#FFFFFF" />
+              <Text style={ui.buttonText}>Bắt đầu phân tích</Text>
+            </>
           )}
         </Pressable>
         {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
@@ -51,7 +62,10 @@ export function AdvisorScreen() {
       {advice ? (
         <View style={ui.card}>
           <View style={[ui.row, { paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
-            <Text style={[ui.label, { fontWeight: '700' }]}>KẾT QUẢ ĐÁNH GIÁ</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Icon name="check" size={14} color={colors.income} strokeWidth={2.5} />
+              <Text style={[ui.label, { fontWeight: '700' }]}>KẾT QUẢ ĐÁNH GIÁ</Text>
+            </View>
           </View>
           <Text style={[ui.text, { fontSize: 13, lineHeight: 22 }]} selectable>
             {advice}

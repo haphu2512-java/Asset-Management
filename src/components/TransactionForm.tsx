@@ -10,6 +10,7 @@ import {
 } from '../finance';
 import { newId } from '../store';
 import { colors, ui } from '../theme';
+import type { IconName } from './Icon';
 import { Chips, Field, Sheet } from './Sheet';
 
 type Props = {
@@ -20,9 +21,9 @@ type Props = {
   onDelete: (id: string) => void;
 };
 
-const KINDS = [
-  { id: 'expense', label: 'Chi tiêu', color: colors.expense },
-  { id: 'income', label: 'Thu nhập', color: colors.income },
+const KINDS: { id: string; label: string; color: string; icon: IconName }[] = [
+  { id: 'expense', label: 'Chi tiêu', color: colors.expense, icon: 'trending-down' },
+  { id: 'income', label: 'Thu nhập', color: colors.income, icon: 'trending-up' },
 ];
 
 const defaultCategory = (kind: TransactionKind) =>
@@ -71,7 +72,7 @@ export function TransactionForm({ visible, transaction, onClose, onSave, onDelet
       error={error}
     >
       <Chips options={KINDS} value={kind} onChange={(id) => changeKind(id as TransactionKind)} />
-      <Field label="Số tiền (VND)">
+      <Field label="Số tiền (VND)" icon="wallet">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -81,14 +82,14 @@ export function TransactionForm({ visible, transaction, onClose, onSave, onDelet
           autoCapitalize="none"
         />
       </Field>
-      <Field label="Danh mục">
+      <Field label="Danh mục" icon="bills">
         <Chips
           options={TRANSACTION_CATEGORIES.filter((c) => c.kind === kind)}
           value={category}
           onChange={setCategory}
         />
       </Field>
-      <Field label="Ghi chú">
+      <Field label="Ghi chú" icon="edit">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -97,7 +98,7 @@ export function TransactionForm({ visible, transaction, onClose, onSave, onDelet
           placeholder="Ví dụ: Cà phê với bạn"
         />
       </Field>
-      <Field label="Ngày (NNNN-TT-NN)">
+      <Field label="Ngày (NNNN-TT-NN)" icon="calendar">
         <TextInput
           placeholderTextColor={colors.muted}
           style={ui.input}
@@ -109,3 +110,4 @@ export function TransactionForm({ visible, transaction, onClose, onSave, onDelet
     </Sheet>
   );
 }
+

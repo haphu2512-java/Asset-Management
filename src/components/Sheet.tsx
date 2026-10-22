@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { colors, ui } from '../theme';
+import { Icon, getCategoryIcon, type IconName } from './Icon';
 
 type Props = {
   visible: boolean;
@@ -37,13 +38,17 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
                 onPress={onClose}
                 hitSlop={12}
                 style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
                   paddingHorizontal: 8,
-                  paddingVertical: 3,
+                  paddingVertical: 4,
                   borderRadius: 4,
                   borderWidth: 1,
                   borderColor: colors.border,
                 }}
               >
+                <Icon name="close" size={12} color={colors.muted} />
                 <Text style={{ fontSize: 12, color: colors.muted }}>Đóng</Text>
               </Pressable>
             </View>
@@ -52,7 +57,11 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
 
             {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
 
-            <Pressable style={ui.button} onPress={onSave}>
+            <Pressable
+              style={[ui.button, { flexDirection: 'row', gap: 6, alignItems: 'center' }]}
+              onPress={onSave}
+            >
+              <Icon name="check" size={15} color="#FFFFFF" strokeWidth={2.5} />
               <Text style={ui.buttonText}>Lưu thay đổi</Text>
             </Pressable>
 
@@ -60,11 +69,15 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
               <Pressable
                 onPress={onDelete}
                 style={{
+                  flexDirection: 'row',
                   alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
                   paddingVertical: 8,
                   marginTop: -4,
                 }}
               >
+                <Icon name="trash" size={13} color={colors.expense} />
                 <Text style={{ color: colors.expense, fontSize: 13, fontWeight: '500' }}>Xoá mục này</Text>
               </Pressable>
             ) : null}
@@ -75,41 +88,69 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon?: IconName;
+  children: ReactNode;
+}) {
   return (
     <View style={{ gap: 4 }}>
-      <Text style={ui.label}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+        {icon ? <Icon name={icon} size={12} color={colors.muted} /> : null}
+        <Text style={ui.label}>{label}</Text>
+      </View>
       {children}
     </View>
   );
 }
 
-type ChipOption = { id: string; label: string; color: string };
+export type ChipOption = {
+  id: string;
+  label: string;
+  color?: string;
+  icon?: IconName;
+};
 
 export function Chips({
   options,
   value,
   onChange,
+  showIcons = true,
 }: {
   options: ChipOption[];
   value: string;
   onChange: (id: string) => void;
+  showIcons?: boolean;
 }) {
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
       {options.map((o) => {
         const selected = o.id === value;
+        const iconName = o.icon || (showIcons ? getCategoryIcon(o.id) : undefined);
         return (
           <Pressable
             key={o.id}
             onPress={() => onChange(o.id)}
             style={[
               ui.chip,
+              { flexDirection: 'row', alignItems: 'center', gap: 5 },
               selected
                 ? { backgroundColor: colors.primary, borderColor: colors.primary }
                 : { backgroundColor: '#FFFFFF', borderColor: colors.border },
             ]}
           >
+            {iconName ? (
+              <Icon
+                name={iconName}
+                size={13}
+                color={selected ? '#FFFFFF' : (o.color || colors.muted)}
+                strokeWidth={2.2}
+              />
+            ) : null}
             <Text
               style={{
                 fontSize: 13,
@@ -125,3 +166,4 @@ export function Chips({
     </View>
   );
 }
+

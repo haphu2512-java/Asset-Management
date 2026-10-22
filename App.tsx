@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { Icon } from './src/components/Icon';
 import { AdvisorScreen } from './src/screens/AdvisorScreen';
 import { AssetsScreen } from './src/screens/AssetsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -12,11 +13,11 @@ import { StoreProvider, useStore } from './src/store';
 import { colors, ui } from './src/theme';
 
 const TABS = [
-  { id: 'overview', label: 'Tổng quan', Screen: OverviewScreen },
-  { id: 'assets', label: 'Tài sản', Screen: AssetsScreen },
-  { id: 'transactions', label: 'Thu chi', Screen: TransactionsScreen },
-  { id: 'goals', label: 'Mục tiêu', Screen: GoalsScreen },
-  { id: 'advisor', label: 'Cố vấn AI', Screen: AdvisorScreen },
+  { id: 'overview', label: 'Tổng quan', icon: 'overview', Screen: OverviewScreen },
+  { id: 'assets', label: 'Tài sản', icon: 'assets', Screen: AssetsScreen },
+  { id: 'transactions', label: 'Thu chi', icon: 'transactions', Screen: TransactionsScreen },
+  { id: 'goals', label: 'Mục tiêu', icon: 'goals', Screen: GoalsScreen },
+  { id: 'advisor', label: 'Cố vấn AI', icon: 'advisor', Screen: AdvisorScreen },
 ] as const;
 
 function Main() {
@@ -42,7 +43,7 @@ function Main() {
 
   return (
     <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
-      {/* Human-designed clean professional header with subtle border */}
+      {/* Header with current tab icon, title, and logout action */}
       <View
         style={{
           paddingHorizontal: 16,
@@ -55,19 +56,26 @@ function Main() {
           borderBottomColor: colors.border,
         }}
       >
-        <Text style={ui.title}>{current.label}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name={current.icon} size={20} color={colors.primary} />
+          <Text style={ui.title}>{current.label}</Text>
+        </View>
         <Pressable
           onPress={handleSignOut}
           hitSlop={8}
           style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
             paddingHorizontal: 8,
-            paddingVertical: 4,
+            paddingVertical: 5,
             borderRadius: 4,
             borderWidth: 1,
             borderColor: colors.border,
             backgroundColor: colors.background,
           }}
         >
+          <Icon name="logout" size={13} color={colors.muted} />
           <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500' }}>
             Đăng xuất
           </Text>
@@ -104,14 +112,15 @@ function Main() {
         )}
       </View>
 
-      {/* Human-designed Segmented/Tab bar with precise active border */}
+      {/* Bottom navigation bar with icons and labels */}
       <View
         style={{
           flexDirection: 'row',
           borderTopWidth: 1,
           borderTopColor: colors.border,
           backgroundColor: colors.card,
-          height: 52,
+          paddingTop: 6,
+          paddingBottom: 6,
         }}
       >
         {TABS.map((t) => {
@@ -124,18 +133,27 @@ function Main() {
                 flex: 1,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderTopWidth: active ? 2 : 0,
-                borderTopColor: active ? colors.primary : 'transparent',
+                gap: 4,
+                paddingVertical: 4,
+                borderRadius: 6,
+                marginHorizontal: 4,
                 backgroundColor: active ? colors.primaryLight : 'transparent',
               }}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
             >
+              <Icon
+                name={t.icon}
+                size={20}
+                color={active ? colors.primary : colors.muted}
+                strokeWidth={active ? 2.3 : 1.8}
+              />
               <Text
                 style={{
-                  fontSize: 12,
-                  fontWeight: active ? '600' : '500',
+                  fontSize: 11,
+                  fontWeight: active ? '700' : '500',
                   color: active ? colors.primary : colors.muted,
+                  letterSpacing: -0.1,
                 }}
               >
                 {t.label}
