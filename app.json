@@ -10,13 +10,17 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.assetmanagement.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -30,6 +34,12 @@
           "cameraPermission": "Cho phép app chụp hoá đơn để ghi chi tiêu."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e6f9352b-e2f3-4435-9850-7f1eec2189a9"
+      }
+    },
+    "owner": "haphu"
   }
 }
