@@ -18,3 +18,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * Message for a 401 from an Edge Function. Our functions explain themselves in `error`;
+ * anything else came from the gateway, which means the functions need redeploying.
+ */
+export function unauthorizedMessage(body: { error?: unknown } | null): string {
+  return typeof body?.error === 'string'
+    ? body.error
+    : 'Máy chủ AI từ chối yêu cầu (401). Hãy deploy lại Edge Function theo docs/SETUP.md.';
+}

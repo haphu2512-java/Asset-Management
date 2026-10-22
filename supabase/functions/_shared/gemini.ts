@@ -19,22 +19,29 @@ export const json = (body: unknown, status = 200) =>
 
 /**
  * Rejects requests that don't come from a signed-in user and enforces the daily quota.
- * The gateway accepts the public anon key as a valid JWT, so the user must be checked here.
+ * The functions are deployed with verify_jwt = false (see supabase/config.toml): the gateway
+ * check accepts the public anon key as a user and rejects tokens signed with the newer
+ * asymmetric JWT keys, so the user is verified here against the Auth server instead.
  * Returns an error response to send back, or null when the request may go ahead.
  */
 export async function authorize(req: Request): Promise<Response | null> {
   const authorization = req.headers.get('authorization') ?? '';
-  const url = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  if (!url || !anonKey) return json({ error: 'Máy chủ chưa cấu hình Supabase.' }, 500);
-
-  const supabase = createClient(url, anonKey, {
-    global: { headers: { authorization } },
-    auth: { persistSession: false },
-  });
   const token = authorization.replace(/^Bearer\s+/i, '');
+  const url = Deno.env.get('SUPABASE_URL');
+  // Use the key the app itself sent, so this works with legacy anon keys and sb_publishable_ keys alike.
+  const apiKey = req.headers.get('apikey') || Deno.env.get('SUPABASE_ANON_KEY');
+  if (!url || !apiKey) return json({ error: 'Máy chủ chưa cấu hình Supabase.' }, 500);
+  if (!token || token === apiKey) return json({ error: 'Bạn cần đăng nhập.' }, 401);
+
+  const supabase = createClient(url, apiKey, {
+    global: { headers: { authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
   const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) return json({ error: 'Bạn cần đăng nhập.' }, 401);
+  if (error || !data.user) {
+    console.error('getUser failed:', error?.message);
+    return json({ error: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' }, 401);
+  }
 
   const { data: allowed, error: quotaError } = await supabase.rpc('consume_ai_quota', {
     daily_limit: DAILY_AI_LIMIT,

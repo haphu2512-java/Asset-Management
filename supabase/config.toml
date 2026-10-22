@@ -1,0 +1,11 @@
+# Supabase CLI settings. Only what differs from the defaults is listed.
+project_id = "asset-management"
+
+# The functions check the signed-in user themselves (supabase/functions/_shared/gemini.ts),
+# so the gateway's legacy JWT check is turned off: it rejects tokens signed with the newer
+# asymmetric JWT keys, which made every AI request fail with 401.
+[functions.advisor]
+verify_jwt = false
+
+[functions.parse-transaction]
+verify_jwt = false

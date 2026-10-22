@@ -41,8 +41,7 @@ Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy 
 
 Kiểm tra: vào **Table Editor**, phải thấy 4 bảng `assets`, `transactions`, `goals`, `ai_usage`, và bảng nào cũng có nhãn **RLS enabled**.
 
-> Cách khác bằng dòng lệnh: `npx supabase init` (chỉ tạo `supabase/config.toml`, không đụng tới code),
-> `npx supabase link --project-ref <project-ref>`, rồi `npx supabase db push`.
+> Cách khác bằng dòng lệnh: `npx supabase link --project-ref <project-ref>` rồi `npx supabase db push`.
 
 ## 3. Cấu hình đăng nhập
 
@@ -64,7 +63,8 @@ Vào **Authentication → Sign In / Providers → Email**:
    ```
 
    - `login` mở trình duyệt để đăng nhập Supabase.
-   - Nếu `link` báo thiếu `config.toml`, chạy `npx supabase init` trước (chọn **N** cho các câu hỏi về VS Code/IntelliJ).
+   - `supabase/config.toml` trong repo tắt bước kiểm tra JWT ở gateway (`verify_jwt = false`), vì hàm tự kiểm tra người dùng.
+     Nếu deploy theo cách khác (không dùng file này), thêm `--no-verify-jwt` vào lệnh deploy, nếu không mọi yêu cầu AI sẽ bị 401.
    - Nếu `deploy` báo cần Docker, thêm `--use-api` vào cuối lệnh.
    - `SUPABASE_URL` và `SUPABASE_ANON_KEY` có sẵn trong Edge Function, không cần đặt.
 3. Kiểm tra: vào **Edge Functions** trên dashboard, phải thấy `advisor` và `parse-transaction`.
@@ -130,6 +130,7 @@ Bước này chỉ cần khi muốn có file APK cài thẳng, không qua Expo G
 | Cố vấn AI báo "Không kiểm tra được hạn mức AI" | Chưa chạy `20261022090000_ai_usage.sql`. |
 | Cố vấn AI báo "Máy chủ chưa cấu hình GEMINI_API_KEY" | Chưa chạy `supabase secrets set` ở bước 4. Đặt xong không cần deploy lại. |
 | "Phiên đăng nhập đã hết hạn" | Đăng xuất rồi đăng nhập lại. |
+| "Máy chủ AI từ chối yêu cầu (401)" | Gateway đang kiểm tra JWT: deploy lại bằng lệnh ở bước 4 (đọc `supabase/config.toml`) hoặc thêm `--no-verify-jwt`. |
 | "Bạn đã dùng hết 50 lượt AI hôm nay" | Hạn mức theo ngày; sửa `DAILY_AI_LIMIT` trong `supabase/functions/_shared/gemini.ts` rồi deploy lại. |
 | Đăng ký xong không đăng nhập được | Đang bật Confirm email: mở email xác nhận, hoặc tắt ở bước 3. |
 | Expo Go báo không hỗ trợ SDK | Cập nhật Expo Go lên bản mới nhất. |

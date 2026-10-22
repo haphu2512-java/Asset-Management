@@ -12,7 +12,7 @@ import {
   type Goal,
   type Transaction,
 } from './finance';
-import { supabase } from './supabase';
+import { supabase, unauthorizedMessage } from './supabase';
 
 /** Builds a compact plain-text snapshot of the user's finances for the model. */
 export function buildFinanceSnapshot(
@@ -90,7 +90,7 @@ export async function getFinancialAdvice(
       throw new Error(body?.error ?? 'Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
     }
     if (res?.status === 401) {
-      throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+      throw new Error(unauthorizedMessage(body));
     }
     throw new Error(body?.error ? `Lỗi AI: ${body.error}` : 'Không kết nối được cố vấn AI. Hãy thử lại.');
   }
