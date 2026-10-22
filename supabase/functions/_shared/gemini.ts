@@ -34,12 +34,14 @@ export async function authorize(req: Request): Promise<Response | null> {
   if (!token || token === apiKey) return json({ error: 'Bạn cần đăng nhập.' }, 401);
 
   const supabase = createClient(url, apiKey, {
-    global: { headers: { authorization: `Bearer ${token}` } },
+    // Capital A matters: auth-js adds its own `Authorization` header, and a lowercase key here
+    // would be sent alongside it as "Bearer x, Bearer x", which the Auth server rejects with HTML.
+    global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) {
-    console.error('getUser failed:', error?.message);
+    console.error('getUser failed:', error?.status, error?.message);
     return json({ error: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' }, 401);
   }
 
