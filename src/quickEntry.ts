@@ -2,6 +2,7 @@ import {
   TRANSACTION_CATEGORIES,
   formatVnd,
   getTransactionCategory,
+  isValidDateKey,
   quickParse,
   todayKey,
   type QuickEntry,
@@ -23,7 +24,7 @@ export function sanitizeEntries(raw: unknown, today = todayKey()): QuickEntry[] 
     const amount = Math.round(Number(item?.amount));
     const category = TRANSACTION_CATEGORIES.find((c) => c.id === item?.category);
     if (!category || !Number.isFinite(amount) || amount <= 0) return [];
-    const date = typeof item?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : today;
+    const date = typeof item?.date === 'string' && isValidDateKey(item.date) ? item.date : today;
     const note = typeof item?.note === 'string' ? item.note.trim().slice(0, 200) : '';
     return [{ kind: category.kind, category: category.id, amount, note, date }];
   });
@@ -49,14 +50,16 @@ export async function parseQuickEntry(input: { text?: string; image?: ReceiptIma
     if (entries.length > 0 || input.image) return { entries, offline: false };
   }
 
+  const status = error ? (error as { context?: Response }).context?.status : undefined;
+  // An expired session must be reported, not hidden behind the offline parser.
+  if (status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+
   if (input.text) {
     const local = quickParse(input.text, today);
     if (local) return { entries: [local], offline: true };
   }
   if (error) {
-    const res = (error as { context?: Response }).context;
-    if (res?.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
-    if (res?.status === 429) throw new Error('Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
+    if (status === 429) throw new Error('Đã hết lượt AI hôm nay hoặc AI đang quá tải. Hãy thử lại sau.');
     throw new Error('Không kết nối được AI. Hãy thử lại.');
   }
   throw new Error(

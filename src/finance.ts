@@ -163,6 +163,21 @@ export function todayKey(now = new Date()): string {
   return `${monthKey(now)}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/** True for a real calendar date "YYYY-MM-DD"; rejects dates like "2026-02-31" that Date.parse rolls over. */
+export function isValidDateKey(date: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const [y, m, d] = date.split('-').map(Number);
+  return todayKey(new Date(y, m - 1, d)) === date;
+}
+
+/** The date `months` months after `from`, clamped to the end of a shorter month (31/1 + 1 → 28/2). */
+export function addMonths(months: number, from = new Date()): string {
+  const target = new Date(from.getFullYear(), from.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(from.getDate(), lastDay));
+  return todayKey(target);
+}
+
 /** Shifts a "YYYY-MM" key by a number of months. */
 export function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split('-').map(Number);

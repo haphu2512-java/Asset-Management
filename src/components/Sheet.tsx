@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { colors, ui } from '../theme';
 import { Icon, getCategoryIcon, type IconName } from './Icon';
 
@@ -67,7 +67,12 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
 
             {onDelete ? (
               <Pressable
-                onPress={onDelete}
+                onPress={() =>
+                  Alert.alert('Xoá mục này?', 'Dữ liệu đã xoá không thể khôi phục.', [
+                    { text: 'Huỷ', style: 'cancel' },
+                    { text: 'Xoá', style: 'destructive', onPress: onDelete },
+                  ])
+                }
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',

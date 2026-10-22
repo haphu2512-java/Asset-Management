@@ -3,6 +3,7 @@ import { TextInput } from 'react-native';
 import {
   TRANSACTION_CATEGORIES,
   formatDigits,
+  isValidDateKey,
   parseVnd,
   todayKey,
   type Transaction,
@@ -55,7 +56,7 @@ export function TransactionForm({ visible, transaction, onClose, onSave, onDelet
   const save = () => {
     const value = parseVnd(amount);
     if (!value) return setError('Số tiền không hợp lệ. Ví dụ: 50.000, 50k hoặc 1,5tr.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+    if (!isValidDateKey(date)) {
       return setError('Ngày phải có dạng NNNN-TT-NN, ví dụ 2026-10-21.');
     }
     onSave({ id: transaction?.id ?? newId(), kind, category, amount: value, note: note.trim(), date });

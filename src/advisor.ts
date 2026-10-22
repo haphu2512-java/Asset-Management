@@ -68,7 +68,7 @@ export function buildFinanceSnapshot(
   return lines.join('\n');
 }
 
-/** Asks the `advisor` Edge Function (which holds the Anthropic key) for advice. */
+/** Asks the `advisor` Edge Function (which holds the Gemini key) for advice. */
 export async function getFinancialAdvice(
   assets: Asset[],
   transactions: Transaction[],
@@ -87,7 +87,7 @@ export async function getFinancialAdvice(
     const res = (error as { context?: Response }).context;
     const body = res ? await res.json().catch(() => null) : null;
     if (res?.status === 429) {
-      throw new Error('Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
+      throw new Error(body?.error ?? 'Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
     }
     if (res?.status === 401) {
       throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');

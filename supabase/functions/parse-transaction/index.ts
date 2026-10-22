@@ -4,25 +4,16 @@
 //   supabase secrets set GEMINI_API_KEY=AIzaSy...
 //   supabase functions deploy parse-transaction
 
-const MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-1.5-flash';
+import { authorize, CORS, generate, geminiError, geminiKey, json } from '../_shared/gemini.ts';
+
 const MAX_TEXT_CHARS = 500;
 /** Base64 length limit for a receipt photo (~3.75 MB of image data). */
 const MAX_IMAGE_CHARS = 5_000_000;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_CATEGORIES = 30;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Category = { id: string; label: string; kind: 'income' | 'expense' };
-
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'content-type': 'application/json' },
-  });
 
 function systemPrompt(categories: Category[], today: string): string {
   const list = categories.map((c) => `- ${c.id}: ${c.label} (${c.kind === 'income' ? 'thu' : 'chi'})`).join('\n');
@@ -44,37 +35,25 @@ Danh mục:
 ${list}`;
 }
 
-async function callGemini(model: string, apiKey: string, sysPrompt: string, parts: unknown[]) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: sysPrompt }],
-      },
-      contents: [{ role: 'user', parts }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  const apiKey = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
+  const apiKey = geminiKey();
   if (!apiKey) return json({ error: 'Máy chủ chưa cấu hình GEMINI_API_KEY.' }, 500);
+  const denied = await authorize(req);
+  if (denied) return denied;
 
   const { text, image, today, categories } = await req.json().catch(() => ({}));
   const validCategories: Category[] = Array.isArray(categories)
     ? categories.filter(
         (c: Category) =>
-          typeof c?.id === 'string' && typeof c?.label === 'string' && (c.kind === 'income' || c.kind === 'expense'),
-      )
+          typeof c?.id === 'string' &&
+          c.id.length <= 40 &&
+          typeof c?.label === 'string' &&
+          c.label.length <= 60 &&
+          (c.kind === 'income' || c.kind === 'expense'),
+      ).slice(0, MAX_CATEGORIES)
     : [];
   const hasText = typeof text === 'string' && text.trim().length > 0;
   const hasImage =
@@ -82,7 +61,7 @@ Deno.serve(async (req) => {
     image.data.length <= MAX_IMAGE_CHARS &&
     IMAGE_TYPES.includes(image?.mediaType);
 
-  if (validCategories.length === 0 || (!hasText && !hasImage) || typeof today !== 'string') {
+  if (validCategories.length === 0 || (!hasText && !hasImage) || typeof today !== 'string' || !DATE_RE.test(today)) {
     return json({ error: 'Dữ liệu không hợp lệ.' }, 400);
   }
 
@@ -99,20 +78,12 @@ Deno.serve(async (req) => {
     text: hasText ? `Ghi chú: ${text.trim().slice(0, MAX_TEXT_CHARS)}` : 'Đây là ảnh hoá đơn.',
   });
 
-  const sysPrompt = systemPrompt(validCategories, today);
-  let res = await callGemini(MODEL, apiKey, sysPrompt, parts);
-
-  if (!res.ok && res.status === 404) {
-    res = await callGemini(FALLBACK_MODEL, apiKey, sysPrompt, parts);
-  }
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    return json(
-      { error: err?.error?.message ?? `Gemini ${res.status}` },
-      res.status === 429 ? 429 : 502,
-    );
-  }
+  const res = await generate(apiKey, {
+    systemInstruction: { parts: [{ text: systemPrompt(validCategories, today) }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+  });
+  if (!res.ok) return geminiError(res);
 
   const data = await res.json();
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
