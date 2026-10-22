@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TextInput } from 'react-native';
-import { formatDigits, parseVnd, todayKey, type Goal } from '../finance';
+import { addMonths, formatDigits, isValidDateKey, parseVnd, type Goal } from '../finance';
 import { newId } from '../store';
 import { colors, ui } from '../theme';
 import { Chips, Field, Sheet } from './Sheet';
@@ -19,12 +19,6 @@ const DURATIONS = [
   { id: '24', label: '2 năm', color: colors.primary },
   { id: '60', label: '5 năm', color: colors.primary },
 ];
-
-function addMonths(months: number): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() + months);
-  return todayKey(d);
-}
 
 export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
   const [name, setName] = useState('');
@@ -48,7 +42,7 @@ export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
     if (!targetValue) return setError('Số tiền mục tiêu không hợp lệ. Ví dụ: 100tr.');
     const savedValue = saved.trim() ? parseVnd(saved) : 0;
     if (savedValue === null) return setError('Số tiền đã có không hợp lệ.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || Number.isNaN(Date.parse(deadline))) {
+    if (!isValidDateKey(deadline)) {
       return setError('Hạn phải có dạng NNNN-TT-NN, ví dụ 2027-10-21.');
     }
     onSave({ id: goal?.id ?? newId(), name: name.trim(), target: targetValue, saved: savedValue, deadline });

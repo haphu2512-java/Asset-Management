@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addMonths,
   formatVnd,
   goalProgress,
+  isValidDateKey,
   quickParse,
   parseVnd,
   shiftMonth,
@@ -130,4 +132,18 @@ test('quickParse reads amount, category and note offline', () => {
   assert.equal(quickParse('đổ xăng 50.000', '2026-10-21')?.category, 'transport');
   assert.equal(quickParse('abc 12', '2026-10-21')?.category, 'other-expense');
   assert.equal(quickParse('không có số', '2026-10-21'), null);
+});
+
+test('isValidDateKey rejects dates that do not exist', () => {
+  assert.equal(isValidDateKey('2026-10-21'), true);
+  assert.equal(isValidDateKey('2028-02-29'), true);
+  assert.equal(isValidDateKey('2026-02-31'), false);
+  assert.equal(isValidDateKey('2026-13-01'), false);
+  assert.equal(isValidDateKey('21/10/2026'), false);
+});
+
+test('addMonths clamps to the end of a shorter month', () => {
+  assert.equal(addMonths(1, new Date(2026, 0, 31)), '2026-02-28');
+  assert.equal(addMonths(12, new Date(2026, 9, 22)), '2027-10-22');
+  assert.equal(addMonths(2, new Date(2026, 11, 15)), '2027-02-15');
 });

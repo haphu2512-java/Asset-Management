@@ -7,7 +7,7 @@ import { newId } from '../store';
 import { colors, ui } from '../theme';
 import { Icon } from './Icon';
 
-type Props = { onSave: (transaction: Transaction) => Promise<void> };
+type Props = { onSave: (transaction: Transaction) => Promise<boolean> };
 
 /** Type "cafe 35k" or snap a receipt; the parser turns it into transactions that are saved right away. */
 export function QuickEntryBar({ onSave }: Props) {
@@ -23,11 +23,15 @@ export function QuickEntryBar({ onSave }: Props) {
     try {
       const { entries, offline } = await parseQuickEntry(input);
       if (entries.length === 0) throw new Error('Không đọc được giao dịch nào. Hãy thử lại.');
-      await Promise.all(entries.map((e) => onSave({ id: newId(), ...e })));
-      setText('');
+      const results = await Promise.all(entries.map((e) => onSave({ id: newId(), ...e })));
+      const saved = entries.filter((_, i) => results[i]);
+      if (saved.length === 0) throw new Error('Không lưu được giao dịch. Hãy kiểm tra kết nối và thử lại.');
+      // Keep the note when something failed, so the user can retry.
+      if (saved.length === entries.length) setText('');
       setMessage(
-        `Đã thêm: ${entries.map(describeEntry).join('; ')}` +
-          (offline ? ' (Tự phân loại)' : ''),
+        `Đã thêm: ${saved.map(describeEntry).join('; ')}` +
+          (offline ? ' (Tự phân loại)' : '') +
+          (saved.length < entries.length ? ` (${entries.length - saved.length} khoản chưa lưu được)` : ''),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Đã có lỗi xảy ra.');

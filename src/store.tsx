@@ -29,15 +29,16 @@ type Store = {
   /** Last failed sync with the server, shown to the user until dismissed. */
   syncError: string | null;
   dismissSyncError: () => void;
-  saveAsset: (asset: Asset) => Promise<void>;
-  deleteAsset: (id: string) => Promise<void>;
-  saveTransaction: (transaction: Transaction) => Promise<void>;
-  deleteTransaction: (id: string) => Promise<void>;
+  /** Writes go to the screen at once and are rolled back if the server rejects them; resolves to success. */
+  saveAsset: (asset: Asset) => Promise<boolean>;
+  deleteAsset: (id: string) => Promise<boolean>;
+  saveTransaction: (transaction: Transaction) => Promise<boolean>;
+  deleteTransaction: (id: string) => Promise<boolean>;
   /** Fetches market prices for stock/crypto holdings; resolves to symbols with no price. */
   refreshMarketPrices: () => Promise<string[]>;
   pricesRefreshing: boolean;
-  saveGoal: (goal: Goal) => Promise<void>;
-  deleteGoal: (id: string) => Promise<void>;
+  saveGoal: (goal: Goal) => Promise<boolean>;
+  deleteGoal: (id: string) => Promise<boolean>;
   signOut: () => Promise<void>;
 };
 
@@ -201,7 +202,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveAsset = useCallback(
     async (asset: Asset) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.assets.find((a) => a.id === asset.id);
       setData((d) => ({ ...d, assets: upsert(d.assets, asset) }));
 
@@ -224,13 +225,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
         fail('Không lưu được tài sản. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
 
   const deleteAsset = useCallback(
     async (id: string) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.assets.find((a) => a.id === id);
       setData((d) => ({ ...d, assets: d.assets.filter((a) => a.id !== id) }));
 
@@ -239,13 +241,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (prev) setData((d) => ({ ...d, assets: upsert(d.assets, prev) }));
         fail('Không xoá được tài sản. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
 
   const saveTransaction = useCallback(
     async (tx: Transaction) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.transactions.find((t) => t.id === tx.id);
       setData((d) => ({ ...d, transactions: upsert(d.transactions, tx) }));
 
@@ -267,13 +270,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
         fail('Không lưu được giao dịch. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
 
   const deleteTransaction = useCallback(
     async (id: string) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.transactions.find((t) => t.id === id);
       setData((d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }));
 
@@ -282,6 +286,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (prev) setData((d) => ({ ...d, transactions: upsert(d.transactions, prev) }));
         fail('Không xoá được giao dịch. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
@@ -290,7 +295,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPricesRefreshing(true);
     try {
       const { updated, missing } = await refreshPrices(dataRef.current.assets);
-      await Promise.all(updated.map(saveAsset));
+      // The user may have edited or deleted a holding while prices were loading:
+      // apply each price to the latest version, and skip holdings that changed.
+      const fresh = updated.flatMap((u) => {
+        const current = dataRef.current.assets.find((a) => a.id === u.id);
+        if (!current || current.symbol !== u.symbol || current.quantity !== u.quantity) return [];
+        return [{ ...current, price: u.price, priceUpdatedAt: u.priceUpdatedAt, amount: u.amount, updatedAt: u.updatedAt }];
+      });
+      await Promise.all(fresh.map(saveAsset));
       return missing;
     } finally {
       setPricesRefreshing(false);
@@ -320,7 +332,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveGoal = useCallback(
     async (goal: Goal) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.goals.find((g) => g.id === goal.id);
       setData((d) => ({ ...d, goals: upsert(d.goals, goal) }));
 
@@ -339,13 +351,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
         fail('Không lưu được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
 
   const deleteGoal = useCallback(
     async (id: string) => {
-      if (!userId) return;
+      if (!userId) return false;
       const prev = dataRef.current.goals.find((g) => g.id === id);
       setData((d) => ({ ...d, goals: d.goals.filter((g) => g.id !== id) }));
 
@@ -354,6 +367,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (prev) setData((d) => ({ ...d, goals: upsert(d.goals, prev) }));
         fail('Không xoá được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
       }
+      return !error;
     },
     [userId],
   );
