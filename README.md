@@ -19,6 +19,8 @@
 
 ## Cài đặt Supabase
 
+Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem [docs/SETUP.md](docs/SETUP.md).
+
 1. Tạo file `.env` từ `.env.example` và điền URL, anon key của project Supabase.
 2. Chạy các file SQL trong `supabase/migrations/` theo thứ tự tên file (SQL editor của Supabase, hoặc `supabase db push`):
    - `..._base_schema.sql` tạo bảng `assets`, `transactions` và bật RLS để mỗi người chỉ đọc/ghi được dữ liệu của mình.

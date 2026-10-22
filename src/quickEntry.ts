@@ -7,7 +7,7 @@ import {
   todayKey,
   type QuickEntry,
 } from './finance.ts';
-import { supabase } from './supabase';
+import { supabase, unauthorizedMessage } from './supabase';
 
 export type ReceiptImage = { data: string; mediaType: string };
 
@@ -50,9 +50,10 @@ export async function parseQuickEntry(input: { text?: string; image?: ReceiptIma
     if (entries.length > 0 || input.image) return { entries, offline: false };
   }
 
-  const status = error ? (error as { context?: Response }).context?.status : undefined;
+  const res = error ? (error as { context?: Response }).context : undefined;
+  const status = res?.status;
   // An expired session must be reported, not hidden behind the offline parser.
-  if (status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+  if (res && status === 401) throw new Error(unauthorizedMessage(await res.json().catch(() => null)));
 
   if (input.text) {
     const local = quickParse(input.text, today);
