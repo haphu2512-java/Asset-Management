@@ -33,11 +33,12 @@ npm install
 
 ## 2. Tạo bảng và bảo mật (migrations)
 
-Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung ba file sau:
+Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung bốn file sau:
 
 1. `supabase/migrations/20261001000000_base_schema.sql`: bảng `assets`, `transactions` và RLS
 2. `supabase/migrations/20261021120000_market_prices_and_goals.sql`: cột giá thị trường và bảng `goals`
 3. `supabase/migrations/20261022090000_ai_usage.sql`: hạn mức AI mỗi ngày
+4. `supabase/migrations/20261025180000_goals_recurring_and_categories.sql`: mục tiêu định kỳ (DCA), phân loại danh mục mục tiêu
 
 Kiểm tra: vào **Table Editor**, phải thấy 4 bảng `assets`, `transactions`, `goals`, `ai_usage`, và bảng nào cũng có nhãn **RLS enabled**.
 
@@ -133,4 +134,6 @@ Bước này chỉ cần khi muốn có file APK cài thẳng, không qua Expo G
 | "Máy chủ AI từ chối yêu cầu (401)" | Gateway đang kiểm tra JWT: deploy lại bằng lệnh ở bước 4 (đọc `supabase/config.toml`) hoặc thêm `--no-verify-jwt`. |
 | "Bạn đã dùng hết 50 lượt AI hôm nay" | Hạn mức theo ngày; sửa `DAILY_AI_LIMIT` trong `supabase/functions/_shared/gemini.ts` rồi deploy lại. |
 | Đăng ký xong không đăng nhập được | Đang bật Confirm email: mở email xác nhận, hoặc tắt ở bước 3. |
+| Expo Go báo "Failed to download remote update" | Lỗi kết nối mạng giữa điện thoại và máy tính. Chạy lại bằng `npx expo start --tunnel`. |
+| Cố vấn AI báo "AI tạm thời không phản hồi" | Key Gemini chưa đúng hoặc model AI bị hạn chế; hãy đặt lại `GEMINI_API_KEY` và deploy lại Edge Functions theo bước 4. |
 | Expo Go báo không hỗ trợ SDK | Cập nhật Expo Go lên bản mới nhất. |
