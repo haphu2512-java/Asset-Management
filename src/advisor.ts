@@ -7,6 +7,7 @@ import {
   summarizeMonth,
   todayKey,
   getTransactionCategory,
+  getGoalCategory,
   goalProgress,
   type Asset,
   type Goal,
@@ -56,13 +57,21 @@ export function buildFinanceSnapshot(
     }
   }
   if (goals.length > 0) {
-    lines.push('', 'MỤC TIÊU TIẾT KIỆM');
+    lines.push('', 'MỤC TIÊU TÀI CHÍNH');
     for (const g of goals) {
       const p = goalProgress(g, now);
-      lines.push(
-        `- ${g.name}: đã có ${formatVnd(g.saved)}/${formatVnd(g.target)}, hạn ${g.deadline}, ` +
-          `cần ${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng${p.overdue ? ' (đã quá hạn)' : ''}`,
-      );
+      const cat = getGoalCategory(g.category);
+      if (g.type === 'recurring') {
+        lines.push(
+          `- [Định kỳ: ${cat.label}] ${g.name}: đã góp ${formatVnd(g.saved)}/${formatVnd(g.target)}, ` +
+            `định kỳ ${formatVnd(g.recurringAmount || p.monthlyNeeded)}/tháng (${p.contributedThisPeriod ? 'kỳ này đã góp' : 'kỳ này chưa góp'})`,
+        );
+      } else {
+        lines.push(
+          `- [${cat.label}] ${g.name}: đã có ${formatVnd(g.saved)}/${formatVnd(g.target)}, hạn ${g.deadline}, ` +
+            `cần ${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng${p.overdue ? ' (đã quá hạn)' : ''}`,
+        );
+      }
     }
   }
   return lines.join('\n');
@@ -113,10 +122,17 @@ export function getGoalAdvice(
   goals: Goal[],
 ): Promise<string> {
   const p = goalProgress(goal);
-  const question =
-    `Tôi muốn đạt mục tiêu "${goal.name.slice(0, 80)}": ${formatVnd(goal.target)} trước ngày ${goal.deadline}, ` +
-    `hiện đã có ${formatVnd(goal.saved)}. Theo tính toán cần để dành ${formatVnd(p.monthlyNeeded)}/tháng. ` +
-    'Với thu chi hiện tại, mục tiêu này có khả thi không? Mỗi tháng tôi nên để dành bao nhiêu, ' +
-    'cắt giảm khoản chi nào, và nên giữ khoản tiết kiệm ở đâu? Trả lời ngắn gọn.';
+  const isRecurring = goal.type === 'recurring';
+  const category = getGoalCategory(goal.category);
+  const question = isRecurring
+    ? `Tôi có kế hoạch tích lũy định kỳ "${goal.name.slice(0, 80)}" (loại: ${category.label}): ` +
+      `góp ${formatVnd(goal.recurringAmount || p.monthlyNeeded)}/tháng, mục tiêu tích lũy ${formatVnd(goal.target)}. ` +
+      `Hiện đã tích lũy được ${formatVnd(goal.saved)}. ` +
+      `Với dòng tiền thu chi hiện tại, kế hoạch góp định kỳ này có phù hợp không? ` +
+      `Làm sao để duy trì kỷ luật đóng góp đều đặn hàng tháng và tối ưu hóa việc đầu tư này? Trả lời ngắn gọn, thực tế.`
+    : `Tôi muốn đạt mục tiêu "${goal.name.slice(0, 80)}" (loại: ${category.label}): ${formatVnd(goal.target)} trước ngày ${goal.deadline}, ` +
+      `hiện đã có ${formatVnd(goal.saved)}. Theo tính toán cần để dành ${formatVnd(p.monthlyNeeded)}/tháng. ` +
+      `Với thu chi hiện tại, mục tiêu này có khả thi không? Mỗi tháng tôi nên để dành bao nhiêu, ` +
+      `cắt giảm khoản chi nào, và nên giữ khoản tiết kiệm ở đâu? Trả lời ngắn gọn.`;
   return getFinancialAdvice(assets, transactions, question, goals);
 }

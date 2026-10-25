@@ -216,6 +216,39 @@ export function summarizeMonth(transactions: Transaction[], month: string): Mont
   return { month, income, expense, balance: income - expense, expenseByCategory };
 }
 
+export type GoalType = 'target_amount' | 'recurring';
+export type GoalFrequency = 'monthly' | 'weekly' | 'quarterly';
+export type GoalCategoryId =
+  | 'etf'
+  | 'stock'
+  | 'saving'
+  | 'emergency'
+  | 'housing'
+  | 'shopping'
+  | 'education'
+  | 'other';
+
+export type GoalCategory = {
+  id: GoalCategoryId;
+  label: string;
+  icon: string;
+  color: string;
+};
+
+export const GOAL_CATEGORIES: GoalCategory[] = [
+  { id: 'etf', label: 'Quỹ ETF / Đầu tư', icon: 'stock', color: '#00838F' },
+  { id: 'saving', label: 'Tiết kiệm tích lũy', icon: 'saving', color: '#2E7D32' },
+  { id: 'emergency', label: 'Quỹ khẩn cấp', icon: 'shield', color: '#1565C0' },
+  { id: 'housing', label: 'Mua nhà / Mua xe', icon: 'housing', color: '#6A1B9A' },
+  { id: 'shopping', label: 'Mua sắm lớn', icon: 'shopping', color: '#F9A825' },
+  { id: 'education', label: 'Du lịch / Học tập', icon: 'education', color: '#AD1457' },
+  { id: 'other', label: 'Khác', icon: 'goals', color: '#757575' },
+];
+
+export function getGoalCategory(id?: string): GoalCategory {
+  return GOAL_CATEGORIES.find((c) => c.id === id) ?? GOAL_CATEGORIES[0];
+}
+
 export type Goal = {
   id: string;
   name: string;
@@ -225,6 +258,18 @@ export type Goal = {
   saved: number;
   /** Target date, "YYYY-MM-DD". */
   deadline: string;
+  /** Goal mode: recurring (góp định kỳ ETF/tiết kiệm) or target_amount (mục tiêu số tiền lớn) */
+  type?: GoalType;
+  /** Category of the goal */
+  category?: GoalCategoryId;
+  /** Planned contribution per period (e.g. 400.000đ/tháng) */
+  recurringAmount?: number;
+  /** Contribution frequency. Default: 'monthly' */
+  frequency?: GoalFrequency;
+  /** Date of last contribution: "YYYY-MM-DD" */
+  lastContributedAt?: string;
+  /** Total number of contributions made */
+  contributionsCount?: number;
 };
 
 export type GoalProgress = {
@@ -233,9 +278,13 @@ export type GoalProgress = {
   remaining: number;
   /** Whole months left until the deadline, at least 1 while the goal is open. */
   monthsLeft: number;
-  /** What must be saved each month from now on to hit the target on time. */
+  /** What must be saved each month from now on to hit the target on time, or recurring amount. */
   monthlyNeeded: number;
   overdue: boolean;
+  /** Whether the user already contributed in the current month / period */
+  contributedThisPeriod: boolean;
+  /** Label for current month, e.g. "tháng 10/2026" */
+  currentPeriodLabel: string;
 };
 
 export function goalProgress(goal: Goal, now = new Date()): GoalProgress {
@@ -246,12 +295,24 @@ export function goalProgress(goal: Goal, now = new Date()): GoalProgress {
   if (d < now.getDate()) months -= 1;
   const overdue = remaining > 0 && new Date(y, m - 1, d) < new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const monthsLeft = Math.max(1, months);
+
+  const curMonth = monthKey(now);
+  const contributedThisPeriod = !!goal.lastContributedAt && goal.lastContributedAt.startsWith(curMonth);
+  const currentPeriodLabel = formatMonth(curMonth);
+
+  const isRecurring = goal.type === 'recurring';
+  const monthlyNeeded = isRecurring && goal.recurringAmount
+    ? goal.recurringAmount
+    : (remaining === 0 ? 0 : Math.ceil(remaining / monthsLeft));
+
   return {
     ratio,
     remaining,
     monthsLeft,
-    monthlyNeeded: remaining === 0 ? 0 : Math.ceil(remaining / monthsLeft),
+    monthlyNeeded,
     overdue,
+    contributedThisPeriod,
+    currentPeriodLabel,
   };
 }
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, ui } from '../theme';
 import { Icon, getCategoryIcon, type IconName } from './Icon';
 
@@ -15,6 +16,13 @@ type Props = {
 
 /** Bottom sheet used by the add/edit forms. */
 export function Sheet({ visible, title, onClose, onSave, onDelete, error, children }: Props) {
+  const insets = useSafeAreaInsets();
+  // Ensure enough bottom clearance for system navigation bar (3-button / gesture bar) or notch / home indicator.
+  const bottomInset = Platform.OS === 'android'
+    ? Math.max(insets.bottom, 44)
+    : insets.bottom;
+  const paddingBottom = 16 + bottomInset;
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -31,7 +39,10 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
             maxHeight: '90%',
           }}
         >
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            contentContainerStyle={{ padding: 16, paddingBottom, gap: 12 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={[ui.row, { paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
               <Text style={ui.heading}>{title}</Text>
               <Pressable

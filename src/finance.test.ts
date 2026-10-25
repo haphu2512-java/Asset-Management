@@ -118,6 +118,40 @@ test('goalProgress spreads the remainder over the months left', () => {
   assert.equal(done.monthlyNeeded, 0);
   assert.equal(done.ratio, 1);
   assert.equal(done.overdue, false);
+
+  // Recurring goal (e.g. 400k/tháng ETF)
+  const recurringGoal = goalProgress(
+    {
+      id: 'etf',
+      name: 'Quỹ ETF',
+      type: 'recurring',
+      category: 'etf',
+      recurringAmount: 400_000,
+      target: 4_800_000,
+      saved: 800_000,
+      deadline: '2027-10-21',
+      lastContributedAt: '2026-09-15',
+    },
+    now,
+  );
+  assert.equal(recurringGoal.monthlyNeeded, 400_000);
+  assert.equal(recurringGoal.contributedThisPeriod, false);
+
+  const contributedGoal = goalProgress(
+    {
+      id: 'etf',
+      name: 'Quỹ ETF',
+      type: 'recurring',
+      category: 'etf',
+      recurringAmount: 400_000,
+      target: 4_800_000,
+      saved: 1_200_000,
+      deadline: '2027-10-21',
+      lastContributedAt: '2026-10-05',
+    },
+    now,
+  );
+  assert.equal(contributedGoal.contributedThisPeriod, true);
 });
 
 test('quickParse reads amount, category and note offline', () => {

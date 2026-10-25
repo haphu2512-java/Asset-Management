@@ -85,6 +85,12 @@ function toGoal(row: any): Goal {
     target: Number(row.target) || 0,
     saved: Number(row.saved) || 0,
     deadline: row.deadline,
+    type: row.type ?? (row.recurring_amount ? 'recurring' : 'target_amount'),
+    category: row.category ?? 'saving',
+    recurringAmount: row.recurring_amount != null ? Number(row.recurring_amount) : undefined,
+    frequency: row.frequency ?? 'monthly',
+    lastContributedAt: row.last_contributed_at ?? undefined,
+    contributionsCount: row.contributions_count != null ? Number(row.contributions_count) : undefined,
   };
 }
 
@@ -336,14 +342,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const prev = dataRef.current.goals.find((g) => g.id === goal.id);
       setData((d) => ({ ...d, goals: upsert(d.goals, goal) }));
 
-      const { error } = await supabase.from('goals').upsert({
+      const payload: any = {
         id: goal.id,
         user_id: userId,
         name: goal.name,
         target: goal.target,
         saved: goal.saved,
         deadline: goal.deadline,
-      });
+      };
+      if (goal.type) payload.type = goal.type;
+      if (goal.category) payload.category = goal.category;
+      if (goal.recurringAmount != null) payload.recurring_amount = goal.recurringAmount;
+      if (goal.frequency) payload.frequency = goal.frequency;
+      if (goal.lastContributedAt) payload.last_contributed_at = goal.lastContributedAt;
+      if (goal.contributionsCount != null) payload.contributions_count = goal.contributionsCount;
+
+      let { error } = await supabase.from('goals').upsert(payload);
+      if (error && (error.message?.includes('column') || (error as any).code === 'PGRST204')) {
+        // Fallback for remote DB before SQL migration is applied
+        const basePayload = {
+          id: goal.id,
+          user_id: userId,
+          name: goal.name,
+          target: goal.target,
+          saved: goal.saved,
+          deadline: goal.deadline,
+        };
+        const retry = await supabase.from('goals').upsert(basePayload);
+        error = retry.error;
+      }
+
       if (error) {
         setData((d) => ({
           ...d,
