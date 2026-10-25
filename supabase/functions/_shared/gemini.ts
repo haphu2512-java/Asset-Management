@@ -2,11 +2,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CANDIDATE_MODELS = [
-  'gemini-3.8-flash',
   'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-3.5-flash-lite',
 ];
 /** AI requests each user may make per day, across all AI features. */
 const DAILY_AI_LIMIT = 50;
