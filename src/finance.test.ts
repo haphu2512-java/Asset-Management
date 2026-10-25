@@ -2,13 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addMonths,
+  formatDay,
   formatVnd,
   goalProgress,
   isValidDateKey,
   quickParse,
   parseVnd,
+  shiftDay,
   shiftMonth,
   summarize,
+  summarizeDay,
   summarizeMonth,
   type Asset,
   type Transaction,
@@ -181,3 +184,26 @@ test('addMonths clamps to the end of a shorter month', () => {
   assert.equal(addMonths(12, new Date(2026, 9, 22)), '2027-10-22');
   assert.equal(addMonths(2, new Date(2026, 11, 15)), '2027-02-15');
 });
+
+test('shiftDay and summarizeDay handle day navigation and daily breakdown', () => {
+  assert.equal(shiftDay('2026-10-25', -1), '2026-10-24');
+  assert.equal(shiftDay('2026-10-01', -1), '2026-09-30');
+  assert.equal(shiftDay('2026-12-31', 1), '2027-01-01');
+
+  const now = new Date(2026, 9, 25); // 2026-10-25
+  assert.equal(formatDay('2026-10-25', now), 'Hôm nay, 25/10/2026');
+  assert.equal(formatDay('2026-10-24', now), 'Hôm qua, 24/10/2026');
+
+  const txs: Transaction[] = [
+    { id: '1', kind: 'income', category: 'salary', amount: 10_000_000, note: '', date: '2026-10-25' },
+    { id: '2', kind: 'expense', category: 'food', amount: 50_000, note: 'Ăn sáng', date: '2026-10-25' },
+    { id: '3', kind: 'expense', category: 'coffee', amount: 35_000, note: 'Cafe', date: '2026-10-25' },
+    { id: '4', kind: 'expense', category: 'food', amount: 200_000, note: '', date: '2026-10-24' },
+  ];
+
+  const daySummary = summarizeDay(txs, '2026-10-25');
+  assert.equal(daySummary.income, 10_000_000);
+  assert.equal(daySummary.expense, 85_000);
+  assert.equal(daySummary.balance, 9_915_000);
+});
+

@@ -189,6 +189,61 @@ export function formatMonth(month: string): string {
   return `Tháng ${Number(m)}/${y}`;
 }
 
+/** Shifts a "YYYY-MM-DD" calendar date key by `deltaDays` days. */
+export function shiftDay(date: string, deltaDays: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + deltaDays);
+  return todayKey(dt);
+}
+
+/**
+ * Formats a "YYYY-MM-DD" date into a friendly Vietnamese string,
+ * e.g. "Hôm nay, 25/10", "Hôm qua, 24/10", "Thứ Bảy, 25/10/2026".
+ */
+export function formatDay(date: string, now = new Date()): string {
+  const today = todayKey(now);
+  const yesterday = shiftDay(today, -1);
+  const tomorrow = shiftDay(today, 1);
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+
+  const daysOfWeek = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  const dayName = daysOfWeek[dt.getDay()];
+  const formatted = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+
+  if (date === today) return `Hôm nay, ${formatted}`;
+  if (date === yesterday) return `Hôm qua, ${formatted}`;
+  if (date === tomorrow) return `Ngày mai, ${formatted}`;
+  return `${dayName}, ${formatted}`;
+}
+
+export type DaySummary = {
+  date: string;
+  income: number;
+  expense: number;
+  balance: number;
+  /** Expense categories with spending in this day, largest first. */
+  expenseByCategory: { category: TransactionCategory; amount: number }[];
+};
+
+export function summarizeDay(transactions: Transaction[], date: string): DaySummary {
+  const inDay = transactions.filter((t) => t.date === date);
+  const sum = (kind: TransactionKind) =>
+    inDay.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
+  const income = sum('income');
+  const expense = sum('expense');
+  const expenseByCategory = TRANSACTION_CATEGORIES.filter((c) => c.kind === 'expense')
+    .map((category) => ({
+      category,
+      amount: inDay
+        .filter((t) => t.kind === 'expense' && t.category === category.id)
+        .reduce((s, t) => s + t.amount, 0),
+    }))
+    .filter((c) => c.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  return { date, income, expense, balance: income - expense, expenseByCategory };
+}
+
 export type MonthSummary = {
   month: string;
   income: number;
