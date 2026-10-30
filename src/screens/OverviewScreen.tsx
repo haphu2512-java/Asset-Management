@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ChangeBadge } from '../components/ChangeBadge';
 import { DonutChart } from '../components/DonutChart';
 import { Icon } from '../components/Icon';
 import { Legend } from '../components/Legend';
 import {
+  changeLabel,
+  compareValue,
   formatDay,
   formatMonth,
   formatVnd,
@@ -21,7 +24,7 @@ import { colors, ui } from '../theme';
 type CashflowPeriod = 'day' | 'month';
 
 export function OverviewScreen() {
-  const { assets, transactions, goals } = useStore();
+  const { assets, transactions, goals, baseline } = useStore();
   const [cashflowPeriod, setCashflowPeriod] = useState<CashflowPeriod>('day');
 
   const today = todayKey();
@@ -36,6 +39,11 @@ export function OverviewScreen() {
         .map((c) => ({ label: c.category.label, color: c.category.color, amount: c.amount })),
     [s],
   );
+
+  // Change since yesterday (or the last day with a snapshot)
+  const netWorthChange = baseline ? compareValue(s.netWorth, baseline.netWorth) : null;
+  const assetsChange = baseline ? compareValue(s.totalAssets, baseline.totalAssets) : null;
+  const debtChange = baseline ? compareValue(s.totalDebt, baseline.totalDebt) : null;
 
   // Daily & Monthly cash flow summaries
   const daySummary = useMemo(() => summarizeDay(transactions, today), [transactions, today]);
@@ -84,6 +92,9 @@ export function OverviewScreen() {
           </View>
         </View>
         <Text style={[ui.big, s.netWorth < 0 && { color: colors.expense }]}>{formatVnd(s.netWorth)}</Text>
+        {assets.length > 0 ? (
+          <ChangeBadge change={netWorthChange} label={baseline ? changeLabel(baseline.date, today) : undefined} />
+        ) : null}
 
         <View style={ui.divider} />
 
@@ -92,7 +103,12 @@ export function OverviewScreen() {
             <Icon name="trending-up" size={13} color={colors.primary} />
             <Text style={ui.label}>Tổng tài sản</Text>
           </View>
-          <Text style={[ui.text, { fontWeight: '600' }]}>{formatVnd(s.totalAssets)}</Text>
+          <View style={{ alignItems: 'flex-end', gap: 2 }}>
+            <Text style={[ui.text, { fontWeight: '600' }]}>{formatVnd(s.totalAssets)}</Text>
+            {assetsChange && assetsChange.direction !== 'flat' ? (
+              <ChangeBadge change={assetsChange} size="small" />
+            ) : null}
+          </View>
         </View>
         {s.totalDebt > 0 ? (
           <View style={ui.row}>
@@ -100,7 +116,12 @@ export function OverviewScreen() {
               <Icon name="debt" size={13} color={colors.expense} />
               <Text style={[ui.label, { color: colors.expense }]}>Tổng nợ phải trả</Text>
             </View>
-            <Text style={[ui.text, { color: colors.expense, fontWeight: '600' }]}>-{formatVnd(s.totalDebt)}</Text>
+            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+              <Text style={[ui.text, { color: colors.expense, fontWeight: '600' }]}>-{formatVnd(s.totalDebt)}</Text>
+              {debtChange && debtChange.direction !== 'flat' ? (
+                <ChangeBadge change={debtChange} size="small" inverse />
+              ) : null}
+            </View>
           </View>
         ) : null}
       </View>
