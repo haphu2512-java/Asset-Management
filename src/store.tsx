@@ -10,14 +10,29 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Asset, CategoryId, Goal, Transaction, TransactionKind } from './finance';
+import {
+  previousSnapshot,
+  sameSnapshot,
+  takeSnapshot,
+  todayKey,
+  type Asset,
+  type AssetSnapshot,
+  type CategoryId,
+  type Goal,
+  type Transaction,
+  type TransactionKind,
+} from './finance';
 import { PRICE_MAX_AGE_MS, pricesAreStale, refreshPrices } from './prices';
 import { supabase } from './supabase';
 
 /** Local cache keys are scoped per user so accounts never see each other's data. */
-const cacheKey = (name: 'assets' | 'transactions' | 'goals', userId: string) => `${name}.v2:${userId}`;
+const cacheKey = (name: 'assets' | 'transactions' | 'goals' | 'snapshots', userId: string) => `${name}.v2:${userId}`;
 /** Older versions stored the Anthropic key on the device; it now lives on the server. */
 const LEGACY_KEYS = ['anthropicApiKey.v1', 'assets.v1', 'transactions.v1'];
+/** Days of snapshots kept on the device; only the latest one before today is compared against. */
+const SNAPSHOT_DAYS = 7;
+/** Price refreshes save holdings one by one; wait for them to settle before writing today's snapshot. */
+const SNAPSHOT_DELAY_MS = 2000;
 
 type Store = {
   loaded: boolean;
@@ -26,6 +41,8 @@ type Store = {
   assets: Asset[];
   transactions: Transaction[];
   goals: Goal[];
+  /** Snapshot from the last day before today, to show change since yesterday; null when there is none yet. */
+  baseline: AssetSnapshot | null;
   /** Last failed sync with the server, shown to the user until dismissed. */
   syncError: string | null;
   dismissSyncError: () => void;
@@ -48,9 +65,11 @@ type Data = {
   assets: Asset[];
   transactions: Transaction[];
   goals: Goal[];
+  /** Recent daily snapshots, newest first. */
+  snapshots: AssetSnapshot[];
 };
 
-const EMPTY: Data = { owner: null, assets: [], transactions: [], goals: [] };
+const EMPTY: Data = { owner: null, assets: [], transactions: [], goals: [], snapshots: [] };
 
 const StoreContext = createContext<Store | null>(null);
 
@@ -105,6 +124,25 @@ function toTransaction(row: any): Transaction {
   };
 }
 
+function toSnapshot(row: any): AssetSnapshot {
+  const amounts: Record<string, number> = {};
+  for (const [id, amount] of Object.entries(row.amounts ?? {})) amounts[id] = Number(amount) || 0;
+  return {
+    date: row.date,
+    netWorth: Number(row.net_worth) || 0,
+    totalAssets: Number(row.total_assets) || 0,
+    totalDebt: Number(row.total_debt) || 0,
+    amounts,
+  };
+}
+
+/** Merges snapshot lists by date (later lists win) and keeps the most recent days. */
+function mergeSnapshots(...lists: AssetSnapshot[][]): AssetSnapshot[] {
+  const byDate = new Map<string, AssetSnapshot>();
+  for (const list of lists) for (const snap of list) byDate.set(snap.date, snap);
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, SNAPSHOT_DAYS);
+}
+
 async function readCache<T>(key: string): Promise<T[]> {
   try {
     const raw = await AsyncStorage.getItem(key);
@@ -149,12 +187,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoaded(false);
       AsyncStorage.multiRemove(LEGACY_KEYS).catch(() => {});
 
-      const [cachedAssets, cachedTx, cachedGoals] = await Promise.all([
+      const [cachedAssets, cachedTx, cachedGoals, cachedSnapshots] = await Promise.all([
         readCache<Asset>(cacheKey('assets', id)),
         readCache<Transaction>(cacheKey('transactions', id)),
         readCache<Goal>(cacheKey('goals', id)),
+        readCache<AssetSnapshot>(cacheKey('snapshots', id)),
       ]);
-      let next: Data = { owner: id, assets: cachedAssets, transactions: cachedTx, goals: cachedGoals };
+      let next: Data = {
+        owner: id,
+        assets: cachedAssets,
+        transactions: cachedTx,
+        goals: cachedGoals,
+        snapshots: mergeSnapshots(cachedSnapshots),
+      };
 
       try {
         const [assetsRes, txRes, goalsRes] = await Promise.all([
@@ -166,7 +211,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (txRes.error) throw txRes.error;
         if (goalsRes.error) throw goalsRes.error;
         next = {
-          owner: id,
+          ...next,
           assets: (assetsRes.data ?? []).map(toAsset),
           transactions: (txRes.data ?? []).map(toTransaction),
           goals: (goalsRes.data ?? []).map(toGoal),
@@ -177,6 +222,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (isMounted) {
           setSyncError('Không tải được dữ liệu từ máy chủ. Đang hiển thị dữ liệu đã lưu trên máy.');
         }
+      }
+
+      // Snapshots are optional: without the migration the device cache still covers this phone.
+      const snapRes = await supabase
+        .from('asset_snapshots')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(SNAPSHOT_DAYS);
+      if (snapRes.error) {
+        console.warn('Failed to load asset snapshots:', snapRes.error);
+      } else {
+        next = { ...next, snapshots: mergeSnapshots(next.snapshots, (snapRes.data ?? []).map(toSnapshot)) };
       }
 
       if (isMounted) {
@@ -199,7 +256,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       () => {},
     );
     AsyncStorage.setItem(cacheKey('goals', userId), JSON.stringify(data.goals)).catch(() => {});
+    AsyncStorage.setItem(cacheKey('snapshots', userId), JSON.stringify(data.snapshots)).catch(
+      () => {},
+    );
   }, [userId, data]);
+
+  // Keep today's snapshot in step with the assets; tomorrow it becomes the baseline.
+  useEffect(() => {
+    if (!loaded || !userId || data.owner !== userId || data.assets.length === 0) return;
+    const timer = setTimeout(() => {
+      const snap = takeSnapshot(dataRef.current.assets, todayKey());
+      const current = dataRef.current.snapshots.find((s) => s.date === snap.date);
+      if (current && sameSnapshot(current, snap)) return;
+      setData((d) => (d.owner === userId ? { ...d, snapshots: mergeSnapshots(d.snapshots, [snap]) } : d));
+      supabase
+        .from('asset_snapshots')
+        .upsert({
+          user_id: userId,
+          date: snap.date,
+          net_worth: snap.netWorth,
+          total_assets: snap.totalAssets,
+          total_debt: snap.totalDebt,
+          amounts: snap.amounts,
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.warn('Failed to save asset snapshot:', error);
+        });
+    }, SNAPSHOT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [loaded, userId, data.owner, data.assets]);
 
   const fail = (message: string, error: unknown) => {
     console.error(message, error);
@@ -409,9 +495,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         cacheKey('assets', id),
         cacheKey('transactions', id),
         cacheKey('goals', id),
+        cacheKey('snapshots', id),
       ]).catch(() => {});
     }
   }, [userId]);
+
+  const today = todayKey();
+  const baseline = useMemo(() => previousSnapshot(data.snapshots, today), [data.snapshots, today]);
 
   const value = useMemo<Store>(
     () => ({
@@ -421,6 +511,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       assets: data.assets,
       transactions: data.transactions,
       goals: data.goals,
+      baseline,
       syncError,
       dismissSyncError: () => setSyncError(null),
       saveAsset,
@@ -435,7 +526,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     // `user` is tracked via userId: a refreshed token must not re-render consumers needlessly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, userId, session, data, syncError, saveAsset, deleteAsset, saveTransaction, deleteTransaction, refreshMarketPrices, pricesRefreshing, saveGoal, deleteGoal, signOut],
+    [loaded, userId, session, data, baseline, syncError, saveAsset, deleteAsset, saveTransaction, deleteTransaction, refreshMarketPrices, pricesRefreshing, saveGoal, deleteGoal, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
