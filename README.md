@@ -28,6 +28,7 @@ Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem 
    - `..._market_prices_and_goals.sql` thêm cột mã/số lượng/giá cho bảng `assets` và tạo bảng `goals`.
    - `..._ai_usage.sql` tạo hạn mức AI theo ngày cho mỗi người dùng (mặc định 50 lượt, sửa `DAILY_AI_LIMIT`
      trong `supabase/functions/_shared/gemini.ts`).
+   - `..._asset_snapshots.sql` tạo bảng `asset_snapshots` lưu giá trị tài sản mỗi ngày, để app hiện tăng/giảm so với hôm qua.
 3. Đặt API key của Google Gemini và deploy các Edge Function:
 
    ```bash

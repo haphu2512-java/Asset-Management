@@ -412,3 +412,76 @@ export function quickParse(text: string, today = todayKey()): QuickEntry | null 
   const note = text.replace(match[0].trim(), '').replace(/\s+/g, ' ').trim();
   return { kind, category, amount, note, date: today };
 }
+
+/** End-of-day picture of the user's assets, used to show change since the previous day. */
+export type AssetSnapshot = {
+  /** Local calendar date, "YYYY-MM-DD". */
+  date: string;
+  netWorth: number;
+  totalAssets: number;
+  totalDebt: number;
+  /** Amount of each asset by id, so single holdings can be compared too. */
+  amounts: Record<string, number>;
+};
+
+export function takeSnapshot(assets: Asset[], date: string): AssetSnapshot {
+  const s = summarize(assets);
+  return {
+    date,
+    netWorth: s.netWorth,
+    totalAssets: s.totalAssets,
+    totalDebt: s.totalDebt,
+    amounts: Object.fromEntries(assets.map((a) => [a.id, a.amount])),
+  };
+}
+
+export function sameSnapshot(a: AssetSnapshot, b: AssetSnapshot): boolean {
+  const aIds = Object.keys(a.amounts);
+  return (
+    a.date === b.date &&
+    a.netWorth === b.netWorth &&
+    a.totalAssets === b.totalAssets &&
+    a.totalDebt === b.totalDebt &&
+    aIds.length === Object.keys(b.amounts).length &&
+    aIds.every((id) => a.amounts[id] === b.amounts[id])
+  );
+}
+
+/** The latest snapshot from before `today`: yesterday's, or the last day the app was used. */
+export function previousSnapshot(snapshots: AssetSnapshot[], today: string): AssetSnapshot | null {
+  return snapshots
+    .filter((s) => s.date < today)
+    .reduce<AssetSnapshot | null>((best, s) => (!best || s.date > best.date ? s : best), null);
+}
+
+export type Change = {
+  amount: number;
+  /** Change relative to the previous value; null when the previous value was 0. */
+  percent: number | null;
+  direction: 'up' | 'down' | 'flat';
+};
+
+export function compareValue(current: number, previous: number): Change {
+  const amount = Math.round(current - previous);
+  return {
+    amount,
+    percent: previous === 0 ? null : (amount / Math.abs(previous)) * 100,
+    direction: amount > 0 ? 'up' : amount < 0 ? 'down' : 'flat',
+  };
+}
+
+/** Formats a change as "+1.250.000 ₫ (+2,35%)". */
+export function formatChange(change: Change): string {
+  const sign = change.amount > 0 ? '+' : change.amount < 0 ? '-' : '';
+  const money = `${sign}${formatVnd(Math.abs(change.amount))}`;
+  if (change.percent === null) return money;
+  const pct = Math.abs(change.percent).toFixed(2).replace('.', ',');
+  return `${money} (${sign}${pct}%)`;
+}
+
+/** "so với hôm qua", or the baseline date when the app was not opened yesterday. */
+export function changeLabel(baselineDate: string, today: string): string {
+  if (baselineDate === shiftDay(today, -1)) return 'so với hôm qua';
+  const [, m, d] = baselineDate.split('-');
+  return `so với ${d}/${m}`;
+}

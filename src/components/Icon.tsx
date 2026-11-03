@@ -47,6 +47,9 @@ export type IconName =
   | 'sparkles'
   | 'trending-up'
   | 'trending-down'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'minus'
   | 'wallet'
   | 'shield'
   | 'pie-chart'
@@ -427,6 +430,29 @@ export function Icon({
         <Svg {...commonProps}>
           <Polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
           <Polyline points="17 18 23 18 23 12" />
+        </Svg>
+      );
+
+    case 'arrow-up':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="12" y1="19" x2="12" y2="5" />
+          <Polyline points="5 12 12 5 19 12" />
+        </Svg>
+      );
+
+    case 'arrow-down':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="12" y1="5" x2="12" y2="19" />
+          <Polyline points="19 12 12 19 5 12" />
+        </Svg>
+      );
+
+    case 'minus':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="5" y1="12" x2="19" y2="12" />
         </Svg>
       );
 

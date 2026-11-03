@@ -1,13 +1,25 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { AssetForm } from '../components/AssetForm';
+import { ChangeBadge } from '../components/ChangeBadge';
 import { CategoryBadge, getCategoryIcon, Icon } from '../components/Icon';
-import { CATEGORIES, formatDigits, formatVnd, isMarketPriced, summarize, type Asset, type CategoryId } from '../finance';
+import {
+  CATEGORIES,
+  changeLabel,
+  compareValue,
+  formatDigits,
+  formatVnd,
+  isMarketPriced,
+  summarize,
+  todayKey,
+  type Asset,
+  type CategoryId,
+} from '../finance';
 import { useStore } from '../store';
 import { colors, ui } from '../theme';
 
 export function AssetsScreen() {
-  const { assets, saveAsset, deleteAsset, refreshMarketPrices, pricesRefreshing } = useStore();
+  const { assets, baseline, saveAsset, deleteAsset, refreshMarketPrices, pricesRefreshing } = useStore();
   const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
   const [editing, setEditing] = useState<Asset | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -15,6 +27,10 @@ export function AssetsScreen() {
 
   const s = summarize(assets);
   const hasMarketAssets = assets.some(isMarketPriced);
+  const netWorthChange = baseline ? compareValue(s.netWorth, baseline.netWorth) : null;
+  /** Change of one holding since the baseline; null for holdings added since then. */
+  const assetChange = (a: Asset) =>
+    baseline && a.id in baseline.amounts ? compareValue(a.amount, baseline.amounts[a.id]) : null;
 
   const refresh = async () => {
     setPriceNote('');
@@ -90,6 +106,10 @@ export function AssetsScreen() {
             >
               {formatVnd(s.netWorth)}
             </Text>
+            <ChangeBadge
+              change={netWorthChange}
+              label={baseline ? changeLabel(baseline.date, todayKey()) : undefined}
+            />
 
             {/* Quick 2-Column Stats: Tổng tài sản vs Tổng nợ */}
             <View
@@ -316,7 +336,9 @@ export function AssetsScreen() {
               </View>
 
               {/* Các tài sản trong danh mục */}
-              {items.map((a, idx) => (
+              {items.map((a, idx) => {
+                const change = assetChange(a);
+                return (
                 <Pressable
                   key={a.id}
                   onPress={() => open(a)}
@@ -346,20 +368,26 @@ export function AssetsScreen() {
                   </View>
 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text
-                      style={[
-                        ui.text,
-                        { fontWeight: '700', fontSize: 14 },
-                        category.isLiability && { color: colors.expense },
-                      ]}
-                    >
-                      {category.isLiability ? '-' : ''}
-                      {formatVnd(a.amount)}
-                    </Text>
+                    <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                      <Text
+                        style={[
+                          ui.text,
+                          { fontWeight: '700', fontSize: 14 },
+                          category.isLiability && { color: colors.expense },
+                        ]}
+                      >
+                        {category.isLiability ? '-' : ''}
+                        {formatVnd(a.amount)}
+                      </Text>
+                      {change && change.direction !== 'flat' ? (
+                        <ChangeBadge change={change} size="small" inverse={category.isLiability} />
+                      ) : null}
+                    </View>
                     <Icon name="chevron-right" size={13} color={colors.muted} />
                   </View>
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
           );
         })}

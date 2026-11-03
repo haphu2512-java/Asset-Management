@@ -33,14 +33,15 @@ npm install
 
 ## 2. Tạo bảng và bảo mật (migrations)
 
-Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung bốn file sau:
+Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung năm file sau:
 
 1. `supabase/migrations/20261001000000_base_schema.sql`: bảng `assets`, `transactions` và RLS
 2. `supabase/migrations/20261021120000_market_prices_and_goals.sql`: cột giá thị trường và bảng `goals`
 3. `supabase/migrations/20261022090000_ai_usage.sql`: hạn mức AI mỗi ngày
 4. `supabase/migrations/20261025180000_goals_recurring_and_categories.sql`: mục tiêu định kỳ (DCA), phân loại danh mục mục tiêu
+5. `supabase/migrations/20261030120000_asset_snapshots.sql`: lưu giá trị tài sản mỗi ngày để so sánh với hôm qua
 
-Kiểm tra: vào **Table Editor**, phải thấy 4 bảng `assets`, `transactions`, `goals`, `ai_usage`, và bảng nào cũng có nhãn **RLS enabled**.
+Kiểm tra: vào **Table Editor**, phải thấy 5 bảng `assets`, `transactions`, `goals`, `ai_usage`, `asset_snapshots`, và bảng nào cũng có nhãn **RLS enabled**.
 
 > Cách khác bằng dòng lệnh: `npx supabase link --project-ref <project-ref>` rồi `npx supabase db push`.
 
