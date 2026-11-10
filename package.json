@@ -32,8 +32,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --test src/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=22.6"
+  }
 }

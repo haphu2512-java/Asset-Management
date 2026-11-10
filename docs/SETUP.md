@@ -33,15 +33,23 @@ npm install
 
 ## 2. Tạo bảng và bảo mật (migrations)
 
-Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung năm file sau:
+Mở **SQL Editor** trên dashboard, bấm **New query**, rồi dán và chạy (**Run**) **lần lượt theo đúng thứ tự** nội dung bảy file sau:
 
 1. `supabase/migrations/20261001000000_base_schema.sql`: bảng `assets`, `transactions` và RLS
 2. `supabase/migrations/20261021120000_market_prices_and_goals.sql`: cột giá thị trường và bảng `goals`
 3. `supabase/migrations/20261022090000_ai_usage.sql`: hạn mức AI mỗi ngày
 4. `supabase/migrations/20261025180000_goals_recurring_and_categories.sql`: mục tiêu định kỳ (DCA), phân loại danh mục mục tiêu
 5. `supabase/migrations/20261030120000_asset_snapshots.sql`: lưu giá trị tài sản mỗi ngày để so sánh với hôm qua
+6. `supabase/migrations/20261111090000_wallets_budgets_recurring.sql`: gắn giao dịch với ví (số dư ví tự cập nhật bằng trigger),
+   chuyển khoản, bảng `budgets`, `recurring_transactions`, `categories`, và hàm xoá tài khoản
+7. `supabase/migrations/20261111100000_investments_and_goal_accounts.sql`: lãi suất và kỳ hạn của tài sản, sổ lệnh `asset_trades`,
+   mục tiêu gắn tài khoản, lịch sử góp `goal_contributions`, hàm đếm lượt AI trong ngày
 
-Kiểm tra: vào **Table Editor**, phải thấy 5 bảng `assets`, `transactions`, `goals`, `ai_usage`, `asset_snapshots`, và bảng nào cũng có nhãn **RLS enabled**.
+Kiểm tra: vào **Table Editor**, phải thấy 10 bảng `assets`, `transactions`, `goals`, `ai_usage`, `asset_snapshots`, `budgets`,
+`recurring_transactions`, `categories`, `asset_trades`, `goal_contributions`, và bảng nào cũng có nhãn **RLS enabled**.
+
+> **Đang nâng cấp từ bản cũ?** Chỉ cần chạy thêm file 6 và 7, rồi deploy lại Edge Function (bước 4) và sửa mẫu email (bước 3).
+> Dữ liệu cũ được giữ nguyên. Từ lúc chạy file 6, giao dịch mới có chọn ví sẽ làm thay đổi số dư ví; giao dịch cũ không bị tính lại.
 
 > Cách khác bằng dòng lệnh: `npx supabase link --project-ref <project-ref>` rồi `npx supabase db push`.
 
@@ -51,6 +59,17 @@ Vào **Authentication → Sign In / Providers → Email**:
 
 - Để bật **Confirm email** (mặc định) thì người dùng mới phải bấm link trong email trước khi đăng nhập.
 - Nếu chỉ dùng cá nhân và muốn đăng ký xong vào app luôn, tắt **Confirm email**.
+
+**Quên mật khẩu bằng mã:** app yêu cầu người dùng nhập mã trong email, nên mẫu email phải chứa mã thay vì chỉ có liên kết.
+Vào **Authentication → Emails → Reset Password** và sửa nội dung, ví dụ:
+
+```html
+<h2>Đặt lại mật khẩu</h2>
+<p>Mã xác nhận của bạn là: <strong>{{ .Token }}</strong></p>
+<p>Nhập mã này vào app Asset Management. Mã hết hạn sau 1 giờ.</p>
+```
+
+Email mặc định của Supabase giới hạn vài thư mỗi giờ; dùng cho nhiều người thì cấu hình SMTP riêng ở **Authentication → Emails → SMTP Settings**.
 
 ## 4. Key Gemini và deploy Edge Functions
 
@@ -119,16 +138,41 @@ Bước này chỉ cần khi muốn có file APK cài thẳng, không qua Expo G
 
 3. Tạo token tại [expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens), rồi trên GitHub vào
    **Settings → Secrets and variables → Actions → New repository secret**, đặt tên `EXPO_TOKEN` và dán token vào.
-4. Từ giờ, mỗi lần push lên `main` (trừ khi chỉ sửa file `.md` hoặc thư mục `supabase/`), GitHub Actions sẽ chạy test rồi
-   gửi build lên EAS. APK có tại expo.dev → project → **Builds**. Có thể build tay bằng
+4. Từ giờ, mỗi lần push lên `main` có thay đổi phần app (không tính file `.md`, `docs/`, `supabase/`, `.github/`),
+   GitHub Actions sẽ chạy kiểm tra rồi gửi build APK (profile `preview`) lên EAS. Đẩy một tag dạng `v1.2.0` sẽ build bản
+   `production`. Kết quả có tại expo.dev → project → **Builds**. Có thể build tay bằng
    `npx eas-cli build --platform android --profile preview`.
+
+## 7. (Tuỳ chọn) Tự động chạy migration và deploy Edge Function
+
+Workflow `.github/workflows/supabase-deploy.yml` chạy `supabase db push` và `supabase functions deploy` mỗi khi thư mục
+`supabase/` thay đổi trên `main`, để không phải làm tay bước 2 và bước 4 sau mỗi lần cập nhật. Thêm ba secret trên GitHub
+(**Settings → Secrets and variables → Actions**):
+
+| Secret | Lấy ở đâu |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) → **Generate new token** |
+| `SUPABASE_PROJECT_REF` | Project ref ở bước 1 |
+| `SUPABASE_DB_PASSWORD` | Mật khẩu database đặt ở bước 1 |
+
+Lưu ý trước khi bật: nếu trước đây bạn chạy migration bằng cách dán vào SQL Editor, Supabase chưa ghi nhận các file đó là đã chạy.
+Hãy đánh dấu một lần bằng lệnh sau (liệt kê đủ các file đã chạy), nếu không `db push` sẽ chạy lại chúng. Các file trong repo
+đều chạy lại được an toàn, nhưng đánh dấu giúp lịch sử rõ ràng:
+
+```bash
+npx supabase link --project-ref <project-ref>
+npx supabase migration repair --status applied 20261001000000 20261021120000 20261022090000 20261025180000 20261030120000
+npx supabase migration list   # cột Remote phải có đủ các phiên bản đã chạy
+```
+
+Chưa thêm secret thì workflow tự bỏ qua, không báo lỗi. Có thể chạy tay ở tab **Actions → Deploy Supabase → Run workflow**.
 
 ## Lỗi thường gặp
 
 | Hiện tượng | Nguyên nhân và cách sửa |
 | --- | --- |
 | App báo "Thiếu biến môi trường EXPO_PUBLIC_SUPABASE_URL…" | Chưa có `.env` (Expo Go) hoặc chưa đặt biến trên EAS (APK). Sửa xong chạy lại `npm start -- --clear`. |
-| "Không tải được dữ liệu từ máy chủ" | Chưa chạy đủ 3 file migration ở bước 2. |
+| "Không tải được dữ liệu từ máy chủ" | Chưa chạy đủ các file migration ở bước 2. |
 | Cố vấn AI báo "Không kiểm tra được hạn mức AI" | Chưa chạy `20261022090000_ai_usage.sql`. |
 | Cố vấn AI báo "Máy chủ chưa cấu hình GEMINI_API_KEY" | Chưa chạy `supabase secrets set` ở bước 4. Đặt xong không cần deploy lại. |
 | "Phiên đăng nhập đã hết hạn" | Đăng xuất rồi đăng nhập lại. |
@@ -137,4 +181,8 @@ Bước này chỉ cần khi muốn có file APK cài thẳng, không qua Expo G
 | Đăng ký xong không đăng nhập được | Đang bật Confirm email: mở email xác nhận, hoặc tắt ở bước 3. |
 | Expo Go báo "Failed to download remote update" | Lỗi kết nối mạng giữa điện thoại và máy tính. Chạy lại bằng `npx expo start --tunnel`. |
 | Cố vấn AI báo "AI tạm thời không phản hồi" | Key Gemini chưa đúng hoặc model AI bị hạn chế; hãy đặt lại `GEMINI_API_KEY` và deploy lại Edge Functions theo bước 4. |
+| Banner "Máy chủ chưa được cập nhật…" hoặc lưu ví, ngân sách không được | Chưa chạy hai file migration 6 và 7 ở bước 2. |
+| Quên mật khẩu: email chỉ có liên kết, không có mã | Chưa sửa mẫu email **Reset Password** để có `{{ .Token }}` (bước 3). |
+| Không bật được Khoá app | Máy chưa cài vân tay, khuôn mặt hoặc mã khoá màn hình. |
+| Không nhận được thông báo nhắc | Cấp quyền thông báo cho app trong cài đặt của máy; trong Expo Go thông báo có thể bị hạn chế, hãy dùng bản APK. |
 | Expo Go báo không hỗ trợ SDK | Cập nhật Expo Go lên bản mới nhất. |
