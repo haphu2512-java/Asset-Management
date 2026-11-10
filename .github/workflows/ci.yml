@@ -85,8 +85,11 @@ jobs:
         with:
           deno-version: v2.x
 
+      # The functions resolve their own npm: imports; the app's package.json is not theirs.
       - name: Type-check functions
         run: deno check supabase/functions/*/index.ts
+        env:
+          DENO_NO_PACKAGE_JSON: 1
 
   build:
     name: EAS Cloud Build
