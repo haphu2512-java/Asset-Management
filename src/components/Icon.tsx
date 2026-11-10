@@ -1,5 +1,4 @@
 import type { ComponentProps } from 'react';
-import { View } from 'react-native';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 export type IconName =
@@ -53,7 +52,28 @@ export type IconName =
   | 'wallet'
   | 'shield'
   | 'pie-chart'
-  | 'scale';
+  | 'scale'
+  | 'settings'
+  | 'eye'
+  | 'eye-off'
+  | 'search'
+  | 'transfer'
+  | 'lock'
+  | 'bell'
+  | 'moon'
+  | 'download'
+  | 'upload'
+  | 'info'
+  | 'alert'
+  | 'send'
+  | 'user'
+  | 'chart'
+  | 'filter'
+  | 'tag'
+  | 'gold'
+  | 'fx'
+  | 'budget'
+  | 'adjust';
 
 export type IconProps = {
   name: IconName;
@@ -482,6 +502,189 @@ export function Icon({
         </Svg>
       );
 
+    case 'settings':
+      return (
+        <Svg {...commonProps}>
+          <Circle cx="12" cy="12" r="3" />
+          <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </Svg>
+      );
+
+    case 'eye':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <Circle cx="12" cy="12" r="3" />
+        </Svg>
+      );
+
+    case 'eye-off':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <Line x1="1" y1="1" x2="23" y2="23" />
+        </Svg>
+      );
+
+    case 'search':
+      return (
+        <Svg {...commonProps}>
+          <Circle cx="11" cy="11" r="8" />
+          <Line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </Svg>
+      );
+
+    case 'transfer':
+      return (
+        <Svg {...commonProps}>
+          <Polyline points="17 1 21 5 17 9" />
+          <Path d="M3 11V9a4 4 0 0 1 4-4h14" />
+          <Polyline points="7 23 3 19 7 15" />
+          <Path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </Svg>
+      );
+
+    case 'lock':
+      return (
+        <Svg {...commonProps}>
+          <Rect x="3" y="11" width="18" height="11" rx="2" />
+          <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </Svg>
+      );
+
+    case 'bell':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </Svg>
+      );
+
+    case 'moon':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </Svg>
+      );
+
+    case 'download':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <Polyline points="7 10 12 15 17 10" />
+          <Line x1="12" y1="15" x2="12" y2="3" />
+        </Svg>
+      );
+
+    case 'upload':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <Polyline points="17 8 12 3 7 8" />
+          <Line x1="12" y1="3" x2="12" y2="15" />
+        </Svg>
+      );
+
+    case 'info':
+      return (
+        <Svg {...commonProps}>
+          <Circle cx="12" cy="12" r="10" />
+          <Line x1="12" y1="16" x2="12" y2="12" />
+          <Line x1="12" y1="8" x2="12.01" y2="8" />
+        </Svg>
+      );
+
+    case 'alert':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <Line x1="12" y1="9" x2="12" y2="13" />
+          <Line x1="12" y1="17" x2="12.01" y2="17" />
+        </Svg>
+      );
+
+    case 'send':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="22" y1="2" x2="11" y2="13" />
+          <Polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </Svg>
+      );
+
+    case 'user':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <Circle cx="12" cy="7" r="4" />
+        </Svg>
+      );
+
+    case 'chart':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="18" y1="20" x2="18" y2="10" />
+          <Line x1="12" y1="20" x2="12" y2="4" />
+          <Line x1="6" y1="20" x2="6" y2="14" />
+        </Svg>
+      );
+
+    case 'filter':
+      return (
+        <Svg {...commonProps}>
+          <Polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+        </Svg>
+      );
+
+    case 'tag':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+          <Line x1="7" y1="7" x2="7.01" y2="7" />
+        </Svg>
+      );
+
+    case 'gold':
+      return (
+        <Svg {...commonProps}>
+          <Path d="M8.5 5h7l2 5h-11z" />
+          <Path d="M3.5 14h7l2 5h-11z" />
+          <Path d="M13.5 14h7l2 5h-11z" />
+        </Svg>
+      );
+
+    case 'fx':
+      return (
+        <Svg {...commonProps}>
+          <Circle cx="12" cy="12" r="10" />
+          <Path d="M15 9h-4a1.5 1.5 0 0 0 0 3h2a1.5 1.5 0 0 1 0 3H9" />
+          <Line x1="12" y1="7" x2="12" y2="17" />
+        </Svg>
+      );
+
+    case 'budget':
+      return (
+        <Svg {...commonProps}>
+          <Circle cx="12" cy="12" r="10" />
+          <Circle cx="12" cy="12" r="6" />
+          <Circle cx="12" cy="12" r="2" />
+        </Svg>
+      );
+
+    case 'adjust':
+      return (
+        <Svg {...commonProps}>
+          <Line x1="4" y1="21" x2="4" y2="14" />
+          <Line x1="4" y1="10" x2="4" y2="3" />
+          <Line x1="12" y1="21" x2="12" y2="12" />
+          <Line x1="12" y1="8" x2="12" y2="3" />
+          <Line x1="20" y1="21" x2="20" y2="16" />
+          <Line x1="20" y1="12" x2="20" y2="3" />
+          <Line x1="1" y1="14" x2="7" y2="14" />
+          <Line x1="9" y1="8" x2="15" y2="8" />
+          <Line x1="17" y1="16" x2="23" y2="16" />
+        </Svg>
+      );
+
     default:
       return (
         <Svg {...commonProps}>
@@ -491,59 +694,52 @@ export function Icon({
   }
 }
 
-/**
- * Renders a circular badge with a tinted background and an icon matching the category color.
- */
-export function CategoryBadge({
-  icon,
-  color,
-  size = 28,
-  iconSize = 14,
-}: {
-  icon: IconName;
-  color: string;
-  size?: number;
-  iconSize?: number;
-}) {
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: `${color}18`, // 10% opacity tint
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Icon name={icon} size={iconSize} color={color} strokeWidth={2.2} />
-    </View>
-  );
-}
+/** Icons offered when the user creates a category. */
+export const CATEGORY_ICONS: IconName[] = [
+  'food',
+  'transport',
+  'housing',
+  'bills',
+  'shopping',
+  'entertainment',
+  'health',
+  'education',
+  'salary',
+  'bonus',
+  'investment',
+  'saving',
+  'cash',
+  'bank',
+  'gold',
+  'shield',
+  'tag',
+  'user',
+  'camera',
+  'other-expense',
+];
 
-export function getCategoryIcon(id: string): IconName {
-  const map: Record<string, IconName> = {
-    cash: 'cash',
-    bank: 'bank',
-    saving: 'saving',
-    stock: 'stock',
-    crypto: 'crypto',
-    lent: 'lent',
-    debt: 'debt',
-    salary: 'salary',
-    bonus: 'bonus',
-    investment: 'investment',
-    'other-income': 'other-income',
-    food: 'food',
-    transport: 'transport',
-    housing: 'housing',
-    bills: 'bills',
-    shopping: 'shopping',
-    entertainment: 'entertainment',
-    health: 'health',
-    education: 'education',
-    'other-expense': 'other-expense',
-  };
-  return map[id] ?? 'other-expense';
-}
+const ICON_ALIASES: Record<string, IconName> = {
+  etf: 'stock',
+  emergency: 'shield',
+  other: 'goals',
+};
 
+const KNOWN_ICONS = new Set<string>([
+  ...CATEGORY_ICONS,
+  'stock',
+  'crypto',
+  'lent',
+  'debt',
+  'fx',
+  'other-income',
+  'goals',
+  'transfer',
+  'adjust',
+]);
+
+/** Icon for a category id or a stored icon name; unknown names get a neutral tag. */
+export function getCategoryIcon(id?: string): IconName {
+  if (!id) return 'tag';
+  if (ICON_ALIASES[id]) return ICON_ALIASES[id];
+  return KNOWN_ICONS.has(id) ? (id as IconName) : 'tag';
+}

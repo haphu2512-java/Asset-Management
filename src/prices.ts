@@ -1,4 +1,5 @@
 import { isMarketPriced, type Asset } from './finance.ts';
+import { GRAMS_PER_CHI, GRAMS_PER_TROY_OUNCE } from './investments.ts';
 
 type Fetch = typeof fetch;
 
@@ -41,6 +42,35 @@ export async function fetchCryptoPrices(
   return prices;
 }
 
+/**
+ * VND per unit of each foreign currency (USD, EUR, JPY...), from the open.er-api.com daily rates.
+ * These are mid-market rates, so they differ slightly from a bank's buy/sell board.
+ */
+export async function fetchFxRates(symbols: string[], fetcher: Fetch = fetch): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+  const res = await fetcher('https://open.er-api.com/v6/latest/USD');
+  if (!res.ok) return {};
+  const data = (await res.json()) as { result?: string; rates?: Record<string, number> };
+  const vndPerUsd = data.rates?.VND;
+  if (data.result !== 'success' || !vndPerUsd) return {};
+  const prices: Record<string, number> = {};
+  for (const symbol of new Set(symbols.map((s) => s.toUpperCase()))) {
+    const perUsd = data.rates?.[symbol];
+    if (perUsd && perUsd > 0) prices[symbol] = vndPerUsd / perUsd;
+  }
+  return prices;
+}
+
+/**
+ * World gold price in VND per "chỉ" (3,75 g), from the gold-backed token XAUT on CoinGecko
+ * (1 token = 1 troy ounce). Domestic SJC gold trades at a premium over this; holdings that
+ * should follow the SJC board are kept at a price typed by the user instead (priceMode 'manual').
+ */
+export async function fetchGoldPrice(fetcher: Fetch = fetch): Promise<number | null> {
+  const perOunce = (await fetchCryptoPrices(['xaut'], fetcher)).XAUT;
+  return perOunce ? Math.round((perOunce * GRAMS_PER_CHI) / GRAMS_PER_TROY_OUNCE) : null;
+}
+
 export type PriceRefresh = {
   /** Assets whose price was updated, with amount recomputed. */
   updated: Asset[];
@@ -48,17 +78,20 @@ export type PriceRefresh = {
   missing: string[];
 };
 
-/** Looks up market prices for every stock/crypto asset that has a symbol and quantity. */
+/** Looks up market prices for every holding that has a symbol and quantity and follows the market. */
 export async function refreshPrices(assets: Asset[], fetcher: Fetch = fetch): Promise<PriceRefresh> {
   const priced = assets.filter(isMarketPriced);
-  const cryptoSymbols = priced.filter((a) => a.category === 'crypto').map((a) => a.symbol!);
-  const stockSymbols = [...new Set(priced.filter((a) => a.category === 'stock').map((a) => a.symbol!.toUpperCase()))];
+  const symbolsOf = (category: Asset['category']) =>
+    [...new Set(priced.filter((a) => a.category === category).map((a) => a.symbol!.toUpperCase()))];
+  const stockSymbols = symbolsOf('stock');
 
-  const [crypto, stockEntries] = await Promise.all([
-    fetchCryptoPrices(cryptoSymbols, fetcher).catch(() => ({}) as Record<string, number>),
+  const [crypto, stockEntries, fx, gold] = await Promise.all([
+    fetchCryptoPrices(symbolsOf('crypto'), fetcher).catch(() => ({}) as Record<string, number>),
     Promise.all(
       stockSymbols.map(async (s) => [s, await fetchStockPrice(s, fetcher).catch(() => null)] as const),
     ),
+    fetchFxRates(symbolsOf('fx'), fetcher).catch(() => ({}) as Record<string, number>),
+    symbolsOf('gold').length > 0 ? fetchGoldPrice(fetcher).catch(() => null) : null,
   ]);
   const stock = Object.fromEntries(stockEntries);
 
@@ -67,7 +100,14 @@ export async function refreshPrices(assets: Asset[], fetcher: Fetch = fetch): Pr
   const missing = new Set<string>();
   for (const asset of priced) {
     const symbol = asset.symbol!.toUpperCase();
-    const price = asset.category === 'crypto' ? crypto[symbol] : stock[symbol];
+    const price =
+      asset.category === 'crypto'
+        ? crypto[symbol]
+        : asset.category === 'fx'
+          ? fx[symbol]
+          : asset.category === 'gold'
+            ? gold
+            : stock[symbol];
     if (!price) {
       missing.add(symbol);
       continue;
