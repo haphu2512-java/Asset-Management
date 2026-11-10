@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { confirm } from '../confirm';
 import { font, radius, space, useTheme } from '../theme';
 import { Icon, getCategoryIcon, type IconName } from './Icon';
 import { Button, IconButton } from './ui';
@@ -41,10 +42,7 @@ export function Sheet({
   const remove = () => {
     if (!onDelete) return;
     if (!confirmDelete) return onDelete();
-    Alert.alert(`${deleteLabel}?`, confirmDelete, [
-      { text: 'Huỷ', style: 'cancel' },
-      { text: deleteLabel, style: 'destructive', onPress: onDelete },
-    ]);
+    confirm({ title: `${deleteLabel}?`, message: confirmDelete, confirmLabel: deleteLabel, destructive: true, onConfirm: onDelete });
   };
 
   return (

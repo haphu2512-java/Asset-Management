@@ -1,77 +1,202 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { describeAdviceError, getFinancialAdvice } from '../advisor';
-import { Icon } from '../components/Icon';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { aiUsageToday, askAdvisor, describeAdviceError, type ChatMessage } from '../advisor';
+import { Markdown } from '../components/Markdown';
+import { Banner, Button, IconButton, Input } from '../components/ui';
 import { useStore } from '../store';
-import { colors, ui } from '../theme';
+import { radius, space, useTheme } from '../theme';
 
-export function AdvisorScreen() {
-  const { assets, transactions, goals } = useStore();
-  const [question, setQuestion] = useState('');
-  const [advice, setAdvice] = useState('');
-  const [error, setError] = useState('');
+const SUGGESTIONS = [
+  'Phân tích tình hình tài chính của tôi',
+  'Tháng này tôi chi nhiều nhất vào đâu?',
+  'Tôi nên cắt giảm khoản chi nào?',
+  'Quỹ dự phòng của tôi đã đủ chưa?',
+  'Cơ cấu tài sản của tôi có rủi ro không?',
+];
+const MAX_SAVED = 40;
+const MAX_QUESTION = 500;
+
+/** A conversation with the AI advisor about the user's own figures. Kept on the device between visits. */
+export function AdvisorScreen({ question: initialQuestion }: { question?: string }) {
+  const { colors, ui } = useTheme();
+  const { user, assets, transactions, goals, categories, budgets, recurring } = useStore();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [ready, setReady] = useState(false);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [usage, setUsage] = useState<{ used: number | null; limit: number | null }>({ used: null, limit: null });
+  const scroll = useRef<ScrollView>(null);
+  const asked = useRef(false);
+  const key = `advisor.chat.v1:${user?.id ?? ''}`;
 
-  const ask = async () => {
-    setLoading(true);
+  const persist = useCallback(
+    (next: ChatMessage[]) => {
+      AsyncStorage.setItem(key, JSON.stringify(next.slice(-MAX_SAVED))).catch(() => {});
+    },
+    [key],
+  );
+
+  const send = useCallback(
+    async (text: string, history: ChatMessage[]) => {
+      const question = text.trim().slice(0, MAX_QUESTION);
+      if (!question || loading) return;
+      const withQuestion: ChatMessage[] = [...history, { role: 'user', text: question }];
+      setMessages(withQuestion);
+      setInput('');
+      setError('');
+      setLoading(true);
+      try {
+        const reply = await askAdvisor({ assets, transactions, goals, categories, budgets, recurring }, question, history);
+        const next: ChatMessage[] = [...withQuestion, { role: 'model', text: reply.text }];
+        setMessages(next);
+        persist(next);
+        const used = await aiUsageToday();
+        setUsage((u) => ({ used, limit: reply.limit ?? u.limit }));
+      } catch (e) {
+        // Keep the question on screen so the user can retry it.
+        setError(describeAdviceError(e));
+        persist(withQuestion);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [assets, transactions, goals, categories, budgets, recurring, loading, persist],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (cancelled) return;
+        const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+        setMessages(Array.isArray(saved) ? saved : []);
+      })
+      .catch(() => {})
+      .finally(() => !cancelled && setReady(true));
+    aiUsageToday().then((used) => !cancelled && setUsage((u) => ({ ...u, used })));
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  // A question passed in (for example from a goal) is asked once, after the saved chat has loaded.
+  useEffect(() => {
+    if (!ready || !initialQuestion || asked.current) return;
+    asked.current = true;
+    void send(initialQuestion, messages);
+  }, [ready, initialQuestion, messages, send]);
+
+  const clear = () => {
+    setMessages([]);
     setError('');
-    try {
-      setAdvice(await getFinancialAdvice(assets, transactions, question, goals));
-    } catch (e) {
-      setError(describeAdviceError(e));
-    } finally {
-      setLoading(false);
-    }
+    AsyncStorage.removeItem(key).catch(() => {});
   };
+  const last = messages[messages.length - 1];
+  const canRetry = !!error && last?.role === 'user';
 
   return (
-    <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
-      <View style={ui.card}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Icon name="advisor" size={18} color={colors.primary} />
-          <Text style={ui.heading}>Cố vấn tài chính</Text>
-        </View>
-        <Text style={ui.label}>
-          Hệ thống tổng hợp tình hình tài sản, nợ và thu chi 3 tháng gần nhất để phân tích và đưa ra khuyến nghị thực tế.
-        </Text>
-        <TextInput
-          placeholderTextColor={colors.muted}
-          style={[ui.input, { minHeight: 60, textAlignVertical: 'top' }]}
-          value={question}
-          onChangeText={setQuestion}
-          placeholder="Nhập câu hỏi cụ thể (ví dụ: Tỷ lệ phân bổ tiền mặt của tôi đã an toàn chưa?)"
-          multiline
-        />
-        <Pressable
-          style={[ui.button, { flexDirection: 'row', alignItems: 'center', gap: 6 }, loading && { opacity: 0.6 }]}
-          onPress={ask}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <>
-              <Icon name="sparkles" size={15} color="#FFFFFF" />
-              <Text style={ui.buttonText}>Bắt đầu phân tích</Text>
-            </>
-          )}
-        </Pressable>
-        {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
-      </View>
-
-      {advice ? (
-        <View style={ui.card}>
-          <View style={[ui.row, { paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon name="check" size={14} color={colors.income} strokeWidth={2.5} />
-              <Text style={[ui.label, { fontWeight: '700' }]}>KẾT QUẢ ĐÁNH GIÁ</Text>
-            </View>
+    <KeyboardAvoidingView style={ui.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+      <ScrollView
+        ref={scroll}
+        contentContainerStyle={[ui.content, { paddingBottom: space.lg }]}
+        keyboardShouldPersistTaps="handled"
+        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}
+      >
+        {messages.length === 0 && !loading ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={ui.heading}>Hỏi cố vấn AI về tài chính của bạn</Text>
+            <Text style={ui.label}>
+              AI đọc số liệu tài sản, thu chi, ngân sách và mục tiêu trong app để trả lời. Đây là gợi ý tham khảo, không phải lời
+              khuyên đầu tư.
+            </Text>
+            {SUGGESTIONS.map((s) => (
+              <Pressable
+                key={s}
+                onPress={() => send(s, messages)}
+                accessibilityRole="button"
+                style={({ pressed }) => [ui.card, { paddingVertical: space.md, opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Text style={[ui.text, { color: colors.primary, fontWeight: '600' }]}>{s}</Text>
+              </Pressable>
+            ))}
           </View>
-          <Text style={[ui.text, { fontSize: 13, lineHeight: 22 }]} selectable>
-            {advice}
-          </Text>
+        ) : null}
+
+        {messages.map((m, i) =>
+          m.role === 'user' ? (
+            <View
+              key={i}
+              style={{
+                alignSelf: 'flex-end',
+                maxWidth: '88%',
+                backgroundColor: colors.primary,
+                borderRadius: radius.lg,
+                borderBottomRightRadius: 4,
+                paddingHorizontal: space.md,
+                paddingVertical: space.sm,
+              }}
+            >
+              <Text style={{ color: colors.onPrimary, fontSize: 14, lineHeight: 20 }}>{m.text}</Text>
+            </View>
+          ) : (
+            <View key={i} style={[ui.card, { alignSelf: 'flex-start', maxWidth: '96%', borderBottomLeftRadius: 4 }]}>
+              <Markdown text={m.text} />
+            </View>
+          ),
+        )}
+
+        {loading ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} accessibilityLiveRegion="polite">
+            <ActivityIndicator color={colors.primary} />
+            <Text style={ui.label}>AI đang đọc số liệu và soạn câu trả lời…</Text>
+          </View>
+        ) : null}
+        {error ? (
+          <Banner tone="danger" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
+        {canRetry && !loading ? (
+          <Button small variant="secondary" icon="refresh" label="Thử lại" onPress={() => send(last.text, messages.slice(0, -1))} />
+        ) : null}
+        {messages.length > 0 && !loading ? (
+          <Button small variant="ghost" icon="trash" label="Xoá cuộc trò chuyện" onPress={clear} />
+        ) : null}
+      </ScrollView>
+
+      <View
+        style={{
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          backgroundColor: colors.card,
+          paddingHorizontal: space.md,
+          paddingVertical: space.sm,
+          gap: 4,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
+          <View style={{ flex: 1 }}>
+            <Input
+              value={input}
+              onChangeText={setInput}
+              placeholder="Nhập câu hỏi của bạn"
+              multiline
+              maxLength={MAX_QUESTION}
+              accessibilityLabel="Câu hỏi cho cố vấn AI"
+              style={{ maxHeight: 110 }}
+            />
+          </View>
+          <IconButton icon="send" label="Gửi câu hỏi" filled onPress={() => send(input, messages)} color={input.trim() && !loading ? undefined : colors.muted} />
         </View>
-      ) : null}
-    </ScrollView>
+        {usage.used != null ? (
+          <Text style={ui.label}>
+            Hôm nay đã dùng {usage.used}
+            {usage.limit ? `/${usage.limit}` : ''} lượt AI (tính chung cả nhập nhanh bằng AI).
+          </Text>
+        ) : null}
+      </View>
+    </KeyboardAvoidingView>
   );
 }

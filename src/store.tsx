@@ -71,6 +71,8 @@ export const SCHEMA_OUTDATED_MESSAGE =
 type ContributeOptions = { accountId?: string; date?: string };
 
 type Store = {
+  /** False until the saved session has been read, so the sign-in screen does not flash at start-up. */
+  authReady: boolean;
   loaded: boolean;
   user: User | null;
   session: Session | null;
@@ -203,6 +205,7 @@ function withPosition(asset: Asset, trades: Trade[]): Asset {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [data, setData] = useState<Data>(EMPTY);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -225,7 +228,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => setSession(session))
+      .catch(() => {})
+      .finally(() => setAuthReady(true));
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
@@ -827,6 +834,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(
     () => ({
+      authReady,
       loaded,
       user,
       session,
@@ -874,6 +882,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // `user` is tracked via userId: a refreshed token must not re-render consumers needlessly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
+      authReady,
       loaded,
       userId,
       session,

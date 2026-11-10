@@ -5,9 +5,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Dùng Face ID để mở khoá app và bảo vệ dữ liệu tài chính của bạn."
+      }
     },
     "android": {
       "package": "com.assetmanagement.app",
@@ -33,7 +36,21 @@
           "photosPermission": "Cho phép app đọc ảnh hoá đơn để ghi chi tiêu.",
           "cameraPermission": "Cho phép app chụp hoá đơn để ghi chi tiêu."
         }
-      ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Dùng Face ID để mở khoá app và bảo vệ dữ liệu tài chính của bạn."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F766E"
+        }
+      ],
+      "expo-document-picker",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {
