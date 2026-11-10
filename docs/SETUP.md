@@ -181,7 +181,7 @@ Chưa thêm secret thì workflow tự bỏ qua, không báo lỗi. Có thể ch�
 | Đăng ký xong không đăng nhập được | Đang bật Confirm email: mở email xác nhận, hoặc tắt ở bước 3. |
 | Expo Go báo "Failed to download remote update" | Lỗi kết nối mạng giữa điện thoại và máy tính. Chạy lại bằng `npx expo start --tunnel`. |
 | Cố vấn AI báo "AI tạm thời không phản hồi" | Key Gemini chưa đúng hoặc model AI bị hạn chế; hãy đặt lại `GEMINI_API_KEY` và deploy lại Edge Functions theo bước 4. |
-| Banner "Máy chủ chưa được cập nhật…" hoặc lưu ví, ngân sách không được | Chưa chạy hai file migration 6 và 7 ở bước 2. |
+| Banner "Cơ sở dữ liệu chưa được cập nhật cho phiên bản này" | Chưa chạy hai file migration 6 và 7 ở bước 2. |
 | Quên mật khẩu: email chỉ có liên kết, không có mã | Chưa sửa mẫu email **Reset Password** để có `{{ .Token }}` (bước 3). |
 | Không bật được Khoá app | Máy chưa cài vân tay, khuôn mặt hoặc mã khoá màn hình. |
 | Không nhận được thông báo nhắc | Cấp quyền thông báo cho app trong cài đặt của máy; trong Expo Go thông báo có thể bị hạn chế, hãy dùng bản APK. |
