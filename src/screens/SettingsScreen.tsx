@@ -104,6 +104,7 @@ export function SettingsScreen() {
           <NavRow icon="budget" title="Ngân sách" value={budgets.length ? `${budgets.length}` : undefined} onPress={() => nav.push({ name: 'budgets' })} />
           <NavRow icon="refresh" title="Giao dịch định kỳ" value={recurring.length ? `${recurring.length}` : undefined} onPress={() => nav.push({ name: 'recurring' })} />
           <NavRow icon="tag" title="Danh mục thu chi" value={customCategories.length ? `${customCategories.length} tuỳ chỉnh` : undefined} onPress={() => nav.push({ name: 'categories' })} />
+          <NavRow icon="sparkles" title="Cố vấn AI" onPress={() => nav.push({ name: 'advisor' })} />
           <NavRow icon="chart" title="Báo cáo" onPress={() => nav.push({ name: 'reports' })} />
           <NavRow icon="download" title="Xuất, nhập dữ liệu CSV" onPress={() => nav.push({ name: 'data' })} />
         </Card>

@@ -294,6 +294,15 @@ function Root() {
   const { colors, ui, dark } = useTheme();
   const { authReady, user, loaded, assets, transactions, goals } = useStore();
   const { prefs, ready, setPrefs } = usePrefs();
+  // Once the guide starts it stays until finished, even though its second step adds the first wallet.
+  const [guiding, setGuiding] = useState(false);
+  const userId = user?.id;
+  const isNew = loaded && assets.length === 0 && transactions.length === 0 && goals.length === 0;
+  const onboarded = !!userId && !!prefs.onboarded[userId];
+  useEffect(() => {
+    if (userId && ready && isNew && !onboarded) setGuiding(true);
+    if (!userId) setGuiding(false);
+  }, [userId, ready, isNew, onboarded]);
 
   let body: ReactNode;
   if (!authReady || !ready) {
@@ -309,15 +318,17 @@ function Root() {
       </SafeAreaView>
     );
   } else {
-    const isNew = loaded && assets.length === 0 && transactions.length === 0 && goals.length === 0;
-    const finish = () => setPrefs({ onboarded: { ...prefs.onboarded, [user.id]: true } });
+    const finish = () => {
+      setGuiding(false);
+      setPrefs({ onboarded: { ...prefs.onboarded, [user.id]: true } });
+    };
     body = (
       <LockGate>
         {/* Keyed by user so one person's open screens never show under another account. */}
         <NavProvider key={user.id}>
           <ToastProvider>
             <ComposerProvider>
-              {!prefs.onboarded[user.id] && isNew ? (
+              {guiding || (isNew && !onboarded) ? (
                 <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
                   <Onboarding onDone={finish} />
                 </SafeAreaView>
