@@ -9,7 +9,7 @@ const CANDIDATE_MODELS = [
   'gemini-3.5-flash-lite',
 ];
 /** AI requests each user may make per day, across all AI features. */
-const DAILY_AI_LIMIT = 50;
+export const DAILY_AI_LIMIT = 50;
 
 export const CORS = {
   'access-control-allow-origin': '*',
