@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { KeyboardAwareScrollView } from '../components/Keyboard';
 import { Icon } from '../components/Icon';
 import { Banner, Button, IconButton, Input, LinkText } from '../components/ui';
 import { supabase } from '../supabase';
@@ -87,8 +88,8 @@ export function AuthScreen() {
 
   const t = TITLES[mode];
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={ui.screen}>
-      <ScrollView
+    <KeyboardAwareScrollView
+        style={ui.screen}
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: space.xl, gap: space.lg }}
         keyboardShouldPersistTaps="handled"
       >
@@ -192,7 +193,6 @@ export function AuthScreen() {
           <Text style={ui.label}>{mode === 'signin' ? 'Chưa có tài khoản?' : 'Đã có tài khoản?'}</Text>
           <LinkText label={mode === 'signin' ? 'Đăng ký' : 'Đăng nhập'} onPress={() => go(mode === 'signin' ? 'signup' : 'signin')} />
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { KeyboardAwareScrollView } from './Keyboard';
 import { parseVndExpression } from '../finance';
 import { newId, useStore } from '../store';
 import { font, radius, space, useTheme } from '../theme';
@@ -32,7 +33,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
   return (
     <View style={ui.screen}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: space.xl, gap: space.lg }} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: space.xl, gap: space.lg }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: 6, justifyContent: 'center' }} accessibilityLabel={`Bước ${step + 1} trên 3`}>
           {[0, 1, 2].map((i) => (
             <View key={i} style={{ width: i === step ? 24 : 8, height: 8, borderRadius: 4, backgroundColor: i === step ? colors.primary : colors.border }} />
@@ -105,7 +106,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             <Button variant="ghost" small label="Bỏ qua hướng dẫn" onPress={onDone} />
           </View>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }
