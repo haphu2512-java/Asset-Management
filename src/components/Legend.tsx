@@ -1,24 +1,41 @@
-import { Text, View } from 'react-native';
-import { formatVnd } from '../finance';
-import { ui } from '../theme';
+import { Pressable, Text, View } from 'react-native';
+import { font, useMoney, useTheme } from '../theme';
 
-type Item = { label: string; color: string; amount: number };
+type Item = { id?: string; label: string; color: string; amount: number };
 
-export function Legend({ items, total }: { items: Item[]; total: number }) {
+/** Colour key for a chart: label, share of the total and amount. Rows open a detail when `onPress` is given. */
+export function Legend({ items, total, onPress }: { items: Item[]; total: number; onPress?: (id: string) => void }) {
+  const { colors, ui, tone } = useTheme();
+  const format = useMoney();
   return (
-    <View style={{ flex: 1, gap: 4 }}>
-      {items.map((item) => (
-        <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={[ui.dot, { backgroundColor: item.color }]} />
-          <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={[ui.text, { fontSize: 13 }]} numberOfLines={1}>
+    <View style={{ flex: 1, gap: 2 }}>
+      {items.map((item) => {
+        const percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
+        const row = (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 30 }}>
+            <View style={[ui.dot, { backgroundColor: tone(item.color) }]} />
+            <Text style={{ flex: 1, fontSize: font.body, color: colors.text }} numberOfLines={1}>
               {item.label}
-              {total > 0 ? ` (${Math.round((item.amount / total) * 100)}%)` : ''}
+              <Text style={{ color: colors.muted }}>{total > 0 ? `  ${percent}%` : ''}</Text>
             </Text>
-            <Text style={[ui.text, { fontSize: 13, fontWeight: '600' }]}>{formatVnd(item.amount)}</Text>
+            <Text style={{ fontSize: font.body, fontWeight: '600', color: colors.text }}>{format(item.amount)}</Text>
           </View>
-        </View>
-      ))}
+        );
+        return onPress && item.id ? (
+          <Pressable
+            key={item.label}
+            onPress={() => onPress(item.id!)}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.label}, ${percent} phần trăm, ${format(item.amount)}`}
+          >
+            {row}
+          </Pressable>
+        ) : (
+          <View key={item.label} accessible accessibilityLabel={`${item.label}, ${percent} phần trăm, ${format(item.amount)}`}>
+            {row}
+          </View>
+        );
+      })}
     </View>
   );
 }

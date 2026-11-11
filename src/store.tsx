@@ -10,118 +10,144 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
+import type { Budget } from './budgets';
 import {
+  isHolding,
+  mergeCategories,
   previousSnapshot,
   sameSnapshot,
   takeSnapshot,
   todayKey,
   type Asset,
   type AssetSnapshot,
-  type CategoryId,
+  type CustomCategory,
   type Goal,
+  type GoalContribution,
   type Transaction,
-  type TransactionKind,
+  type TransactionCategory,
 } from './finance';
+import { positionFromTrades, tradeCashFlow, type Trade } from './investments';
+import { adjustmentFor, applyTransactionChange } from './ledger';
 import { PRICE_MAX_AGE_MS, pricesAreStale, refreshPrices } from './prices';
+import { advanceRule, dueDates, occurrenceTransaction, type Recurring } from './recurring';
 import { supabase } from './supabase';
+import {
+  classifyFailure,
+  Draft,
+  EMPTY,
+  isSchemaError,
+  LIST_KEYS,
+  nextBatch,
+  TABLES,
+  type Data,
+  type ListKey,
+  type Op,
+} from './sync';
 
 /** Local cache keys are scoped per user so accounts never see each other's data. */
-const cacheKey = (name: 'assets' | 'transactions' | 'goals' | 'snapshots', userId: string) => `${name}.v2:${userId}`;
-/** Older versions stored the Anthropic key on the device; it now lives on the server. */
-const LEGACY_KEYS = ['anthropicApiKey.v1', 'assets.v1', 'transactions.v1'];
-/** Days of snapshots kept on the device; only the latest one before today is compared against. */
-const SNAPSHOT_DAYS = 7;
+const cacheKey = (name: ListKey | 'snapshots' | 'outbox', userId: string) => `${name}.v3:${userId}`;
+/** Keys written by older versions of the app. */
+const legacyKeys = (userId: string) => [
+  'anthropicApiKey.v1',
+  'assets.v1',
+  'transactions.v1',
+  ...['assets', 'transactions', 'goals', 'snapshots'].map((n) => `${n}.v2:${userId}`),
+];
+/** Days of snapshots kept, enough for the one-year net worth chart. */
+const SNAPSHOT_DAYS = 400;
 /** Price refreshes save holdings one by one; wait for them to settle before writing today's snapshot. */
 const SNAPSHOT_DELAY_MS = 2000;
+/** Rows per request when loading a table; PostgREST returns at most 1000 by default. */
+const PAGE_SIZE = 1000;
+/** How often pending changes are retried while the app is open. */
+const RETRY_MS = 30_000;
+/** Returning to the app after this long reloads from the server. */
+const RELOAD_AFTER_MS = 5 * 60_000;
+
+export const SCHEMA_OUTDATED_MESSAGE =
+  'Cơ sở dữ liệu chưa được cập nhật cho phiên bản này. Hãy chạy các file migration mới trong supabase/migrations (xem docs/SETUP.md).';
+
+type ContributeOptions = { accountId?: string; date?: string };
 
 type Store = {
+  /** False until the saved session has been read, so the sign-in screen does not flash at start-up. */
+  authReady: boolean;
   loaded: boolean;
   user: User | null;
   session: Session | null;
   assets: Asset[];
   transactions: Transaction[];
   goals: Goal[];
+  budgets: Budget[];
+  recurring: Recurring[];
+  /** Built-in categories with the user's changes, plus the user's own categories. */
+  categories: TransactionCategory[];
+  customCategories: CustomCategory[];
+  trades: Trade[];
+  contributions: GoalContribution[];
+  /** Daily net worth snapshots, newest first. */
+  snapshots: AssetSnapshot[];
   /** Snapshot from the last day before today, to show change since yesterday; null when there is none yet. */
   baseline: AssetSnapshot | null;
-  /** Last failed sync with the server, shown to the user until dismissed. */
+  /** Changes saved on the device that have not reached the server yet. */
+  pendingCount: number;
+  /** Last problem talking to the server, shown to the user until dismissed. */
   syncError: string | null;
   dismissSyncError: () => void;
-  /** Writes go to the screen at once and are rolled back if the server rejects them; resolves to success. */
-  saveAsset: (asset: Asset) => Promise<boolean>;
-  deleteAsset: (id: string) => Promise<boolean>;
-  saveTransaction: (transaction: Transaction) => Promise<boolean>;
-  deleteTransaction: (id: string) => Promise<boolean>;
-  /** Fetches market prices for stock/crypto holdings; resolves to symbols with no price. */
+  /** Sends pending changes and reloads from the server. */
+  syncNow: () => Promise<void>;
+
+  /**
+   * Changes show on screen at once and are kept on the device until the server has them,
+   * so nothing typed without a connection is lost.
+   */
+  saveAsset: (asset: Asset) => void;
+  deleteAsset: (id: string) => void;
+  /** Records the transfer that brings an account to its real balance. */
+  adjustBalance: (assetId: string, target: number) => void;
+  saveTransaction: (transaction: Transaction) => void;
+  saveTransactions: (transactions: Transaction[]) => void;
+  deleteTransaction: (id: string) => void;
+  saveGoal: (goal: Goal) => void;
+  deleteGoal: (id: string) => void;
+  /** Adds money to a goal; with an account and a linked asset the money is transferred for real. */
+  contribute: (goalId: string, amount: number, options?: ContributeOptions) => void;
+  removeContribution: (id: string) => void;
+  saveBudget: (budget: Budget) => void;
+  saveBudgets: (budgets: Budget[]) => void;
+  deleteBudget: (id: string) => void;
+  saveRecurring: (rule: Recurring) => void;
+  deleteRecurring: (id: string) => void;
+  /** Records one occurrence of a rule and moves the rule on. */
+  recordOccurrence: (ruleId: string, date: string) => void;
+  /** Moves the rule on without recording the occurrence. */
+  skipOccurrence: (ruleId: string, date: string) => void;
+  saveCategory: (category: CustomCategory) => void;
+  deleteCategory: (id: string) => void;
+  /** Adds or edits a trade, updates the holding's quantity and moves the cash when a wallet is given. */
+  saveTrade: (trade: Trade) => void;
+  deleteTrade: (id: string) => void;
+
+  /** Fetches market prices for holdings; resolves to symbols with no price. */
   refreshMarketPrices: () => Promise<string[]>;
   pricesRefreshing: boolean;
-  saveGoal: (goal: Goal) => Promise<boolean>;
-  deleteGoal: (id: string) => Promise<boolean>;
   signOut: () => Promise<void>;
+  /** Deletes the account and everything stored for it on the server; resolves to an error message or null. */
+  deleteAccount: () => Promise<string | null>;
 };
-
-type Data = {
-  /** User id the lists belong to; null until that user's data has been loaded. */
-  owner: string | null;
-  assets: Asset[];
-  transactions: Transaction[];
-  goals: Goal[];
-  /** Recent daily snapshots, newest first. */
-  snapshots: AssetSnapshot[];
-};
-
-const EMPTY: Data = { owner: null, assets: [], transactions: [], goals: [], snapshots: [] };
 
 const StoreContext = createContext<Store | null>(null);
 
 export function newId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function upsert<T extends { id: string }>(list: T[], item: T): T[] {
-  return list.some((x) => x.id === item.id)
-    ? list.map((x) => (x.id === item.id ? item : x))
-    : [...list, item];
-}
-
-function toAsset(row: any): Asset {
-  return {
-    id: row.id,
-    name: row.name,
-    category: row.category as CategoryId,
-    amount: Number(row.amount) || 0,
-    updatedAt: row.updated_at,
-    symbol: row.symbol ?? undefined,
-    quantity: row.quantity == null ? undefined : Number(row.quantity),
-    price: row.price == null ? undefined : Number(row.price),
-    priceUpdatedAt: row.price_updated_at ?? undefined,
-  };
-}
-
-function toGoal(row: any): Goal {
-  return {
-    id: row.id,
-    name: row.name,
-    target: Number(row.target) || 0,
-    saved: Number(row.saved) || 0,
-    deadline: row.deadline,
-    type: row.type ?? (row.recurring_amount ? 'recurring' : 'target_amount'),
-    category: row.category ?? 'saving',
-    recurringAmount: row.recurring_amount != null ? Number(row.recurring_amount) : undefined,
-    frequency: row.frequency ?? 'monthly',
-    lastContributedAt: row.last_contributed_at ?? undefined,
-    contributionsCount: row.contributions_count != null ? Number(row.contributions_count) : undefined,
-  };
-}
-
-function toTransaction(row: any): Transaction {
-  return {
-    id: row.id,
-    kind: row.kind as TransactionKind,
-    category: row.category,
-    amount: Number(row.amount) || 0,
-    note: row.note || '',
-    date: row.date,
-  };
+/** Merges snapshot lists by date (later lists win) and keeps the most recent days. */
+function mergeSnapshots(...lists: AssetSnapshot[][]): AssetSnapshot[] {
+  const byDate = new Map<string, AssetSnapshot>();
+  for (const list of lists) for (const snap of list) byDate.set(snap.date, snap);
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, SNAPSHOT_DAYS);
 }
 
 function toSnapshot(row: any): AssetSnapshot {
@@ -136,27 +162,54 @@ function toSnapshot(row: any): AssetSnapshot {
   };
 }
 
-/** Merges snapshot lists by date (later lists win) and keeps the most recent days. */
-function mergeSnapshots(...lists: AssetSnapshot[][]): AssetSnapshot[] {
-  const byDate = new Map<string, AssetSnapshot>();
-  for (const list of lists) for (const snap of list) byDate.set(snap.date, snap);
-  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, SNAPSHOT_DAYS);
-}
-
 async function readCache<T>(key: string): Promise<T[]> {
   try {
     const raw = await AsyncStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }
 }
 
+/** Loads every row of a table, page by page. */
+async function fetchAll<K extends ListKey>(list: K): Promise<Data[K]> {
+  const config = TABLES[list];
+  const rows: unknown[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(config.table)
+      .select('*')
+      .order(config.order, { ascending: false })
+      .order(config.idColumn, { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE_SIZE) break;
+  }
+  return rows.map(config.fromRow) as Data[K];
+}
+
+/** Rebuilds a holding from its trades: quantity from the history, value from the last known price. */
+function withPosition(asset: Asset, trades: Trade[]): Asset {
+  const own = trades.filter((t) => t.assetId === asset.id);
+  if (own.length === 0) return asset;
+  const { quantity } = positionFromTrades(own);
+  return {
+    ...asset,
+    quantity,
+    amount: asset.price ? Math.round(asset.price * quantity) : asset.amount,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [data, setData] = useState<Data>(EMPTY);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
   const [pricesRefreshing, setPricesRefreshing] = useState(false);
 
   const user = session?.user ?? null;
@@ -164,101 +217,251 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const userId = user?.id ?? null;
 
   const dataRef = useRef(data);
-  dataRef.current = data;
+  const outbox = useRef<Op[]>([]);
+  const flushing = useRef<Promise<boolean> | null>(null);
+  const lastLoad = useRef(0);
+  const reload = useRef<(() => Promise<void>) | null>(null);
+
+  const apply = useCallback((next: Data) => {
+    dataRef.current = next;
+    setData(next);
+  }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => setSession(session))
+      .catch(() => {})
+      .finally(() => setAuthReady(true));
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
     return () => subscription.unsubscribe();
   }, []);
 
+  const persistOutbox = useCallback((id: string) => {
+    setPendingCount(outbox.current.length);
+    AsyncStorage.setItem(cacheKey('outbox', id), JSON.stringify(outbox.current)).catch(() => {});
+  }, []);
+
+  /** Sends one request for the first operations in the outbox. */
+  const send = useCallback(async (batch: Op[]) => {
+    const first = batch[0];
+    const config = TABLES[first.list];
+    const { error, status } =
+      first.type === 'delete'
+        ? await supabase.from(config.table).delete().eq(config.idColumn, first.id)
+        : await supabase
+            .from(config.table)
+            .upsert(batch.map((op) => (op as Extract<Op, { type: 'upsert' }>).row), { onConflict: config.conflict });
+    if (!error) return { result: 'ok' as const, error: null };
+    return { result: classifyFailure(status, error.code), error };
+  }, []);
+
+  /**
+   * Sends pending changes in order. Stops at the first one that cannot be delivered right now;
+   * a change the server refuses is dropped and reported. Resolves to true when nothing is left.
+   */
+  const flush = useCallback(
+    (id: string): Promise<boolean> => {
+      if (flushing.current) return flushing.current;
+      const run = (async () => {
+        let rejected = false;
+        while (outbox.current.length > 0) {
+          const batch = nextBatch(outbox.current);
+          const { result, error } = await send(batch);
+          if (result === 'retry') break;
+          // Changes queued while the request was in flight are behind the batch, so this is safe.
+          outbox.current = outbox.current.slice(batch.length);
+          persistOutbox(id);
+          if (result === 'rejected') {
+            rejected = true;
+            console.error('Change rejected by the server:', batch[0].list, error);
+            setSyncError(
+              isSchemaError(error?.code)
+                ? SCHEMA_OUTDATED_MESSAGE
+                : 'Máy chủ từ chối một thay đổi nên nó đã được hoàn lại. Hãy kiểm tra và nhập lại.',
+            );
+          }
+        }
+        return { empty: outbox.current.length === 0, rejected };
+      })();
+      const done = run
+        .then(({ empty, rejected }) => {
+          flushing.current = null;
+          // The device copy no longer matches the server after a refusal: take the server's version.
+          if (rejected && empty) reload.current?.();
+          return empty;
+        })
+        .catch(() => {
+          flushing.current = null;
+          return false;
+        });
+      flushing.current = done;
+      return done;
+    },
+    [persistOutbox, send],
+  );
+
+  /** Applies a change on the device and queues it for the server. */
+  const commit = useCallback(
+    (build: (draft: Draft) => void) => {
+      const current = dataRef.current;
+      if (!userId || current.owner !== userId) return;
+      const draft = new Draft(current, userId);
+      build(draft);
+      if (draft.data === current) return;
+      apply(draft.data);
+      if (draft.ops.length === 0) return;
+      outbox.current = [...outbox.current, ...draft.ops];
+      persistOutbox(userId);
+      flush(userId);
+    },
+    [userId, apply, persistOutbox, flush],
+  );
+
+  /** Records every occurrence of automatic recurring rules that has fallen due. */
+  const runRecurring = useCallback(() => {
+    const today = todayKey();
+    commit((d) => {
+      for (const rule of d.data.recurring) {
+        if (!rule.auto) continue;
+        const dates = dueDates(rule, today);
+        if (dates.length === 0) continue;
+        for (const date of dates) {
+          const tx = occurrenceTransaction(rule, date);
+          if (d.get('transactions', tx.id)) continue;
+          d.local('assets', (assets) => applyTransactionChange(assets, null, tx));
+          d.put('transactions', tx);
+        }
+        d.put('recurring', advanceRule(rule, dates[dates.length - 1]));
+      }
+    });
+  }, [commit]);
+
   // Load the signed-in user's data: cache first, then the server.
   useEffect(() => {
     if (!userId) {
-      setData(EMPTY);
+      apply(EMPTY);
+      outbox.current = [];
+      setPendingCount(0);
       setLoaded(true);
+      reload.current = null;
       return;
     }
     let isMounted = true;
+    const id = userId;
 
-    async function loadData(id: string) {
-      setLoaded(false);
-      AsyncStorage.multiRemove(LEGACY_KEYS).catch(() => {});
-
-      const [cachedAssets, cachedTx, cachedGoals, cachedSnapshots] = await Promise.all([
-        readCache<Asset>(cacheKey('assets', id)),
-        readCache<Transaction>(cacheKey('transactions', id)),
-        readCache<Goal>(cacheKey('goals', id)),
-        readCache<AssetSnapshot>(cacheKey('snapshots', id)),
-      ]);
-      let next: Data = {
-        owner: id,
-        assets: cachedAssets,
-        transactions: cachedTx,
-        goals: cachedGoals,
-        snapshots: mergeSnapshots(cachedSnapshots),
-      };
-
+    async function fromServer() {
+      // Pending changes go first: loading before them would overwrite what the user typed offline.
+      const sent = await flush(id);
+      if (!isMounted) return;
+      if (!sent) {
+        setSyncError('Chưa kết nối được máy chủ. Thay đổi của bạn được lưu trên máy và sẽ tự đồng bộ khi có mạng.');
+        return;
+      }
       try {
-        const [assetsRes, txRes, goalsRes] = await Promise.all([
-          supabase.from('assets').select('*').order('updated_at', { ascending: false }),
-          supabase.from('transactions').select('*').order('date', { ascending: false }),
-          supabase.from('goals').select('*').order('created_at', { ascending: true }),
+        const [assets, transactions, goals] = await Promise.all([
+          fetchAll('assets'),
+          fetchAll('transactions'),
+          fetchAll('goals'),
         ]);
-        if (assetsRes.error) throw assetsRes.error;
-        if (txRes.error) throw txRes.error;
-        if (goalsRes.error) throw goalsRes.error;
-        next = {
-          ...next,
-          assets: (assetsRes.data ?? []).map(toAsset),
-          transactions: (txRes.data ?? []).map(toTransaction),
-          goals: (goalsRes.data ?? []).map(toGoal),
-        };
-        if (isMounted) setSyncError(null);
+        let next: Data = { ...dataRef.current, owner: id, assets, transactions, goals };
+        let schemaOutdated = false;
+        // Tables added by later migrations: without them the app still shows the basics.
+        const extra = await Promise.all(
+          (['budgets', 'recurring', 'categories', 'trades', 'contributions'] as const).map(async (list) => {
+            try {
+              return [list, await fetchAll(list)] as const;
+            } catch (err) {
+              if (isSchemaError((err as { code?: string }).code)) schemaOutdated = true;
+              else throw err;
+              return null;
+            }
+          }),
+        );
+        for (const entry of extra) if (entry) next = { ...next, [entry[0]]: entry[1] };
+
+        const snapRes = await supabase
+          .from('asset_snapshots')
+          .select('*')
+          .order('date', { ascending: false })
+          .limit(SNAPSHOT_DAYS);
+        if (snapRes.error) console.warn('Failed to load asset snapshots:', snapRes.error);
+        else next = { ...next, snapshots: mergeSnapshots(next.snapshots, (snapRes.data ?? []).map(toSnapshot)) };
+
+        if (!isMounted) return;
+        // Anything queued while loading is newer than what was just fetched; keep the device copy then.
+        if (outbox.current.length === 0) apply(next);
+        lastLoad.current = Date.now();
+        setSyncError(schemaOutdated ? SCHEMA_OUTDATED_MESSAGE : null);
       } catch (err) {
         console.error('Failed to load data:', err);
         if (isMounted) {
           setSyncError('Không tải được dữ liệu từ máy chủ. Đang hiển thị dữ liệu đã lưu trên máy.');
         }
       }
-
-      // Snapshots are optional: without the migration the device cache still covers this phone.
-      const snapRes = await supabase
-        .from('asset_snapshots')
-        .select('*')
-        .order('date', { ascending: false })
-        .limit(SNAPSHOT_DAYS);
-      if (snapRes.error) {
-        console.warn('Failed to load asset snapshots:', snapRes.error);
-      } else {
-        next = { ...next, snapshots: mergeSnapshots(next.snapshots, (snapRes.data ?? []).map(toSnapshot)) };
-      }
-
-      if (isMounted) {
-        setData(next);
-        setLoaded(true);
-      }
     }
 
-    loadData(userId);
+    async function load() {
+      setLoaded(false);
+      AsyncStorage.multiRemove(legacyKeys(id)).catch(() => {});
+      const lists = await Promise.all(LIST_KEYS.map((key) => readCache(cacheKey(key, id))));
+      const cached: Data = { ...EMPTY, owner: id };
+      LIST_KEYS.forEach((key, i) => ((cached as Record<string, unknown>)[key] = lists[i]));
+      cached.snapshots = mergeSnapshots(await readCache<AssetSnapshot>(cacheKey('snapshots', id)));
+      outbox.current = await readCache<Op>(cacheKey('outbox', id));
+      if (!isMounted) return;
+      setPendingCount(outbox.current.length);
+      apply(cached);
+      // With a cache the app is usable right away; a first sign-in waits for the server.
+      const hasCache = cached.assets.length + cached.transactions.length + cached.goals.length > 0;
+      if (hasCache) setLoaded(true);
+      await fromServer();
+      if (!isMounted) return;
+      setLoaded(true);
+      runRecurring();
+    }
+
+    reload.current = async () => {
+      await fromServer();
+      if (isMounted) runRecurring();
+    };
+    load();
     return () => {
       isMounted = false;
     };
+    // runRecurring changes identity with commit; the load itself only depends on the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // Retry pending changes while the app is open, and catch up when it comes back to the front.
+  useEffect(() => {
+    if (!userId) return;
+    const timer = setInterval(() => {
+      if (outbox.current.length > 0) flush(userId);
+    }, RETRY_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      if (Date.now() - lastLoad.current > RELOAD_AFTER_MS) reload.current?.();
+      else if (outbox.current.length > 0) flush(userId);
+      else runRecurring();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [userId, flush, runRecurring]);
+
   // Persist to the local cache, but only once the lists belong to the current user.
+  const persisted = useRef<Data>(EMPTY);
   useEffect(() => {
     if (!userId || data.owner !== userId) return;
-    AsyncStorage.setItem(cacheKey('assets', userId), JSON.stringify(data.assets)).catch(() => {});
-    AsyncStorage.setItem(cacheKey('transactions', userId), JSON.stringify(data.transactions)).catch(
-      () => {},
-    );
-    AsyncStorage.setItem(cacheKey('goals', userId), JSON.stringify(data.goals)).catch(() => {});
-    AsyncStorage.setItem(cacheKey('snapshots', userId), JSON.stringify(data.snapshots)).catch(
-      () => {},
-    );
+    for (const key of [...LIST_KEYS, 'snapshots'] as const) {
+      if (persisted.current[key] === data[key] && persisted.current.owner === userId) continue;
+      AsyncStorage.setItem(cacheKey(key, userId), JSON.stringify(data[key])).catch(() => {});
+    }
+    persisted.current = data;
   }, [userId, data]);
 
   // Keep today's snapshot in step with the assets; tomorrow it becomes the baseline.
@@ -268,7 +471,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const snap = takeSnapshot(dataRef.current.assets, todayKey());
       const current = dataRef.current.snapshots.find((s) => s.date === snap.date);
       if (current && sameSnapshot(current, snap)) return;
-      setData((d) => (d.owner === userId ? { ...d, snapshots: mergeSnapshots(d.snapshots, [snap]) } : d));
+      if (dataRef.current.owner !== userId) return;
+      apply({ ...dataRef.current, snapshots: mergeSnapshots(dataRef.current.snapshots, [snap]) });
       supabase
         .from('asset_snapshots')
         .upsert({
@@ -285,128 +489,296 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
     }, SNAPSHOT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [loaded, userId, data.owner, data.assets]);
+  }, [loaded, userId, data.owner, data.assets, apply]);
 
-  const fail = (message: string, error: unknown) => {
-    console.error(message, error);
-    setSyncError(message);
+  const putTransaction = (d: Draft, tx: Transaction) => {
+    const prev = d.get('transactions', tx.id) ?? null;
+    d.local('assets', (assets) => applyTransactionChange(assets, prev, tx));
+    d.put('transactions', tx);
+  };
+
+  const dropTransaction = (d: Draft, id: string | undefined) => {
+    const prev = id ? d.get('transactions', id) : undefined;
+    if (!prev) return;
+    d.local('assets', (assets) => applyTransactionChange(assets, prev, null));
+    d.remove('transactions', prev.id);
   };
 
   const saveAsset = useCallback(
-    async (asset: Asset) => {
-      if (!userId) return false;
-      const prev = dataRef.current.assets.find((a) => a.id === asset.id);
-      setData((d) => ({ ...d, assets: upsert(d.assets, asset) }));
-
-      const { error } = await supabase.from('assets').upsert({
-        id: asset.id,
-        user_id: userId,
-        name: asset.name,
-        category: asset.category,
-        amount: asset.amount,
-        updated_at: asset.updatedAt,
-        symbol: asset.symbol ?? null,
-        quantity: asset.quantity ?? null,
-        price: asset.price ?? null,
-        price_updated_at: asset.priceUpdatedAt ?? null,
-      });
-      if (error) {
-        setData((d) => ({
-          ...d,
-          assets: prev ? upsert(d.assets, prev) : d.assets.filter((a) => a.id !== asset.id),
-        }));
-        fail('Không lưu được tài sản. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
-    },
-    [userId],
+    (asset: Asset) =>
+      commit((d) => {
+        const prev = d.get('assets', asset.id);
+        // The balance of an existing account only moves through transactions (the server applies
+        // them itself), so it is left out of the write instead of overwriting the server's value.
+        const keepServerAmount = !!prev && !isHolding(prev) && !isHolding(asset);
+        if (keepServerAmount && prev.amount !== asset.amount) {
+          const adjustment = adjustmentFor(prev, asset.amount, newId(), todayKey());
+          d.put('assets', { ...asset, amount: prev.amount }, ['amount']);
+          if (adjustment) putTransaction(d, adjustment);
+        } else {
+          d.put('assets', asset, keepServerAmount ? ['amount'] : []);
+        }
+      }),
+    [commit],
   );
 
   const deleteAsset = useCallback(
-    async (id: string) => {
-      if (!userId) return false;
-      const prev = dataRef.current.assets.find((a) => a.id === id);
-      setData((d) => ({ ...d, assets: d.assets.filter((a) => a.id !== id) }));
+    (id: string) =>
+      commit((d) => {
+        d.remove('assets', id);
+        // The server clears these links through its foreign keys; mirror that on the device.
+        const unlink = <T extends { accountId?: string; toAccountId?: string }>(items: T[]) =>
+          items.map((x) =>
+            x.accountId === id || x.toAccountId === id
+              ? {
+                  ...x,
+                  accountId: x.accountId === id ? undefined : x.accountId,
+                  toAccountId: x.toAccountId === id ? undefined : x.toAccountId,
+                }
+              : x,
+          );
+        d.local('transactions', unlink);
+        d.local('recurring', unlink);
+        d.local('contributions', unlink);
+        d.local('trades', (trades) => unlink(trades.filter((t) => t.assetId !== id)));
+        d.local('goals', (goals) => goals.map((g) => (g.assetId === id ? { ...g, assetId: undefined } : g)));
+      }),
+    [commit],
+  );
 
-      const { error } = await supabase.from('assets').delete().eq('id', id);
-      if (error) {
-        if (prev) setData((d) => ({ ...d, assets: upsert(d.assets, prev) }));
-        fail('Không xoá được tài sản. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
-    },
-    [userId],
+  const adjustBalance = useCallback(
+    (assetId: string, target: number) =>
+      commit((d) => {
+        const asset = d.get('assets', assetId);
+        const adjustment = asset && adjustmentFor(asset, target, newId(), todayKey());
+        if (adjustment) putTransaction(d, adjustment);
+      }),
+    [commit],
   );
 
   const saveTransaction = useCallback(
-    async (tx: Transaction) => {
-      if (!userId) return false;
-      const prev = dataRef.current.transactions.find((t) => t.id === tx.id);
-      setData((d) => ({ ...d, transactions: upsert(d.transactions, tx) }));
+    (tx: Transaction) => commit((d) => putTransaction(d, tx)),
+    [commit],
+  );
 
-      const { error } = await supabase.from('transactions').upsert({
-        id: tx.id,
-        user_id: userId,
-        kind: tx.kind,
-        category: tx.category,
-        amount: tx.amount,
-        note: tx.note,
-        date: tx.date,
-      });
-      if (error) {
-        setData((d) => ({
-          ...d,
-          transactions: prev
-            ? upsert(d.transactions, prev)
-            : d.transactions.filter((t) => t.id !== tx.id),
-        }));
-        fail('Không lưu được giao dịch. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
-    },
-    [userId],
+  const saveTransactions = useCallback(
+    (list: Transaction[]) => commit((d) => list.forEach((tx) => putTransaction(d, tx))),
+    [commit],
   );
 
   const deleteTransaction = useCallback(
-    async (id: string) => {
-      if (!userId) return false;
-      const prev = dataRef.current.transactions.find((t) => t.id === id);
-      setData((d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }));
+    (id: string) =>
+      commit((d) => {
+        dropTransaction(d, id);
+        // A transfer that belonged to a trade or contribution is gone; forget the link.
+        d.local('trades', (trades) => trades.map((t) => (t.transactionId === id ? { ...t, transactionId: undefined } : t)));
+        d.local('contributions', (list) =>
+          list.map((c) => (c.transactionId === id ? { ...c, transactionId: undefined } : c)),
+        );
+      }),
+    [commit],
+  );
 
-      const { error } = await supabase.from('transactions').delete().eq('id', id);
-      if (error) {
-        if (prev) setData((d) => ({ ...d, transactions: upsert(d.transactions, prev) }));
-        fail('Không xoá được giao dịch. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
+  const saveGoal = useCallback((goal: Goal) => commit((d) => d.put('goals', goal)), [commit]);
+
+  const deleteGoal = useCallback(
+    (id: string) =>
+      commit((d) => {
+        d.remove('goals', id);
+        d.local('contributions', (list) => list.filter((c) => c.goalId !== id));
+      }),
+    [commit],
+  );
+
+  const contribute = useCallback(
+    (goalId: string, amount: number, options: ContributeOptions = {}) =>
+      commit((d) => {
+        const goal = d.get('goals', goalId);
+        if (!goal || amount <= 0) return;
+        const date = options.date ?? todayKey();
+        const from = options.accountId;
+        // Real money only moves when the goal has an account to receive it.
+        const moves = !!from && !!goal.assetId && from !== goal.assetId && !!d.get('assets', goal.assetId);
+        const transactionId = moves ? newId() : undefined;
+        if (moves) {
+          putTransaction(d, {
+            id: transactionId!,
+            kind: 'transfer',
+            category: '',
+            amount,
+            note: `Góp mục tiêu: ${goal.name}`,
+            date,
+            accountId: from,
+            toAccountId: goal.assetId,
+          });
+        }
+        d.put('contributions', { id: newId(), goalId, amount, date, accountId: moves ? from : undefined, transactionId });
+        d.put('goals', {
+          ...goal,
+          saved: goal.saved + amount,
+          lastContributedAt:
+            goal.lastContributedAt && goal.lastContributedAt > date ? goal.lastContributedAt : date,
+          contributionsCount: (goal.contributionsCount ?? 0) + 1,
+        });
+      }),
+    [commit],
+  );
+
+  const removeContribution = useCallback(
+    (id: string) =>
+      commit((d) => {
+        const item = d.get('contributions', id);
+        if (!item) return;
+        d.remove('contributions', id);
+        dropTransaction(d, item.transactionId);
+        const goal = d.get('goals', item.goalId);
+        if (!goal) return;
+        const rest = d.data.contributions.filter((c) => c.goalId === goal.id);
+        d.put('goals', {
+          ...goal,
+          saved: Math.max(0, goal.saved - item.amount),
+          contributionsCount: Math.max(0, (goal.contributionsCount ?? 1) - 1),
+          lastContributedAt: rest.reduce<string | undefined>((latest, c) => (!latest || c.date > latest ? c.date : latest), undefined),
+        });
+      }),
+    [commit],
+  );
+
+  const saveBudget = useCallback((budget: Budget) => commit((d) => d.put('budgets', budget)), [commit]);
+  const saveBudgets = useCallback(
+    (budgets: Budget[]) => commit((d) => budgets.forEach((b) => d.put('budgets', b))),
+    [commit],
+  );
+  const deleteBudget = useCallback((id: string) => commit((d) => d.remove('budgets', id)), [commit]);
+
+  const saveRecurring = useCallback(
+    (rule: Recurring) => {
+      commit((d) => d.put('recurring', rule));
+      runRecurring();
     },
-    [userId],
+    [commit, runRecurring],
+  );
+  const deleteRecurring = useCallback((id: string) => commit((d) => d.remove('recurring', id)), [commit]);
+
+  const recordOccurrence = useCallback(
+    (ruleId: string, date: string) =>
+      commit((d) => {
+        const rule = d.get('recurring', ruleId);
+        if (!rule) return;
+        const tx = occurrenceTransaction(rule, date);
+        if (!d.get('transactions', tx.id)) putTransaction(d, tx);
+        if (date >= rule.nextDate) d.put('recurring', advanceRule(rule, date));
+      }),
+    [commit],
+  );
+
+  const skipOccurrence = useCallback(
+    (ruleId: string, date: string) =>
+      commit((d) => {
+        const rule = d.get('recurring', ruleId);
+        if (rule && date >= rule.nextDate) d.put('recurring', advanceRule(rule, date));
+      }),
+    [commit],
+  );
+
+  const saveCategory = useCallback(
+    (category: CustomCategory) => commit((d) => d.put('categories', category)),
+    [commit],
+  );
+  const deleteCategory = useCallback((id: string) => commit((d) => d.remove('categories', id)), [commit]);
+
+  /** Writes the cash side of a trade (or removes it) and returns the trade with its transaction link. */
+  const syncTradeCash = (d: Draft, trade: Trade, asset: Asset): Trade => {
+    const flow = tradeCashFlow(trade);
+    const wallet = trade.accountId ? d.get('assets', trade.accountId) : undefined;
+    if (!wallet || flow === 0) {
+      dropTransaction(d, trade.transactionId);
+      return { ...trade, transactionId: undefined };
+    }
+    const id = trade.transactionId ?? newId();
+    const label = trade.side === 'buy' ? 'Mua' : trade.side === 'sell' ? 'Bán' : 'Cổ tức';
+    putTransaction(d, {
+      id,
+      kind: 'transfer',
+      category: '',
+      amount: Math.abs(flow),
+      note: `${label} ${asset.symbol ?? asset.name}`,
+      date: trade.date,
+      ...(flow < 0 ? { accountId: wallet.id, toAccountId: asset.id } : { accountId: asset.id, toAccountId: wallet.id }),
+    });
+    return { ...trade, transactionId: id };
+  };
+
+  const saveTrade = useCallback(
+    (trade: Trade) =>
+      commit((d) => {
+        const asset = d.get('assets', trade.assetId);
+        if (!asset) return;
+        const existing = d.data.trades.filter((t) => t.assetId === asset.id);
+        // A holding entered before trades existed keeps its units as an opening purchase.
+        if (existing.length === 0 && (asset.quantity ?? 0) > 0) {
+          d.put('trades', {
+            id: newId(),
+            assetId: asset.id,
+            side: 'buy',
+            date: trade.date < todayKey() ? trade.date : todayKey(),
+            quantity: asset.quantity!,
+            price: asset.price ?? 0,
+            fee: 0,
+            note: 'Số dư ban đầu',
+          });
+        }
+        d.put('trades', syncTradeCash(d, trade, asset));
+        d.put('assets', withPosition(d.get('assets', asset.id)!, d.data.trades));
+      }),
+    [commit],
+  );
+
+  const deleteTrade = useCallback(
+    (id: string) =>
+      commit((d) => {
+        const trade = d.get('trades', id);
+        if (!trade) return;
+        dropTransaction(d, trade.transactionId);
+        d.remove('trades', id);
+        const asset = d.get('assets', trade.assetId);
+        const rest = d.data.trades.filter((t) => t.assetId === trade.assetId);
+        if (asset && rest.length > 0) d.put('assets', withPosition(asset, d.data.trades));
+      }),
+    [commit],
   );
 
   const refreshMarketPrices = useCallback(async () => {
     setPricesRefreshing(true);
     try {
       const { updated, missing } = await refreshPrices(dataRef.current.assets);
-      // The user may have edited or deleted a holding while prices were loading:
-      // apply each price to the latest version, and skip holdings that changed.
-      const fresh = updated.flatMap((u) => {
-        const current = dataRef.current.assets.find((a) => a.id === u.id);
-        if (!current || current.symbol !== u.symbol || current.quantity !== u.quantity) return [];
-        return [{ ...current, price: u.price, priceUpdatedAt: u.priceUpdatedAt, amount: u.amount, updatedAt: u.updatedAt }];
+      commit((d) => {
+        // The user may have edited or deleted a holding while prices were loading:
+        // apply each price to the latest version, and skip holdings that changed.
+        for (const u of updated) {
+          const current = d.get('assets', u.id);
+          if (!current || current.symbol !== u.symbol || current.quantity !== u.quantity) continue;
+          d.put('assets', {
+            ...current,
+            price: u.price,
+            priceUpdatedAt: u.priceUpdatedAt,
+            amount: u.amount,
+            updatedAt: u.updatedAt,
+          });
+        }
       });
-      await Promise.all(fresh.map(saveAsset));
       return missing;
     } finally {
       setPricesRefreshing(false);
     }
-  }, [saveAsset]);
+  }, [commit]);
 
   // Keep holdings at market value: refresh after loading, after a holding changes, and periodically.
   // Automatic refreshes are spaced out so a symbol with no price can't cause a refresh loop.
   const lastAutoRefresh = useRef(0);
   const holdingsKey = data.assets
     .filter((a) => a.symbol && a.quantity)
-    .map((a) => `${a.id}:${a.symbol}:${a.quantity}`)
+    .map((a) => `${a.id}:${a.symbol}:${a.quantity}:${a.priceMode ?? ''}`)
     .join('|');
   useEffect(() => {
     if (!loaded || !userId || data.owner !== userId) return;
@@ -422,111 +794,130 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, [loaded, userId, data.owner, holdingsKey, refreshMarketPrices]);
 
-  const saveGoal = useCallback(
-    async (goal: Goal) => {
-      if (!userId) return false;
-      const prev = dataRef.current.goals.find((g) => g.id === goal.id);
-      setData((d) => ({ ...d, goals: upsert(d.goals, goal) }));
-
-      const payload: any = {
-        id: goal.id,
-        user_id: userId,
-        name: goal.name,
-        target: goal.target,
-        saved: goal.saved,
-        deadline: goal.deadline,
-      };
-      if (goal.type) payload.type = goal.type;
-      if (goal.category) payload.category = goal.category;
-      if (goal.recurringAmount != null) payload.recurring_amount = goal.recurringAmount;
-      if (goal.frequency) payload.frequency = goal.frequency;
-      if (goal.lastContributedAt) payload.last_contributed_at = goal.lastContributedAt;
-      if (goal.contributionsCount != null) payload.contributions_count = goal.contributionsCount;
-
-      let { error } = await supabase.from('goals').upsert(payload);
-      if (error && (error.message?.includes('column') || (error as any).code === 'PGRST204')) {
-        // Fallback for remote DB before SQL migration is applied
-        const basePayload = {
-          id: goal.id,
-          user_id: userId,
-          name: goal.name,
-          target: goal.target,
-          saved: goal.saved,
-          deadline: goal.deadline,
-        };
-        const retry = await supabase.from('goals').upsert(basePayload);
-        error = retry.error;
-      }
-
-      if (error) {
-        setData((d) => ({
-          ...d,
-          goals: prev ? upsert(d.goals, prev) : d.goals.filter((g) => g.id !== goal.id),
-        }));
-        fail('Không lưu được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
-    },
-    [userId],
-  );
-
-  const deleteGoal = useCallback(
-    async (id: string) => {
-      if (!userId) return false;
-      const prev = dataRef.current.goals.find((g) => g.id === id);
-      setData((d) => ({ ...d, goals: d.goals.filter((g) => g.id !== id) }));
-
-      const { error } = await supabase.from('goals').delete().eq('id', id);
-      if (error) {
-        if (prev) setData((d) => ({ ...d, goals: upsert(d.goals, prev) }));
-        fail('Không xoá được mục tiêu. Hãy kiểm tra kết nối và thử lại.', error);
-      }
-      return !error;
-    },
-    [userId],
-  );
+  const clearDevice = useCallback((id: string) => {
+    AsyncStorage.multiRemove([...LIST_KEYS, 'snapshots' as const, 'outbox' as const].map((k) => cacheKey(k, id))).catch(
+      () => {},
+    );
+  }, []);
 
   const signOut = useCallback(async () => {
     const id = userId;
+    if (id) await flush(id).catch(() => false);
     await supabase.auth.signOut();
     // Don't leave a signed-out user's financial data on the device.
-    if (id) {
-      AsyncStorage.multiRemove([
-        cacheKey('assets', id),
-        cacheKey('transactions', id),
-        cacheKey('goals', id),
-        cacheKey('snapshots', id),
-      ]).catch(() => {});
+    if (id) clearDevice(id);
+  }, [userId, flush, clearDevice]);
+
+  const deleteAccount = useCallback(async () => {
+    const id = userId;
+    if (!id) return 'Bạn chưa đăng nhập.';
+    const { error } = await supabase.rpc('delete_my_account');
+    if (error) {
+      console.error('delete_my_account failed:', error);
+      return isSchemaError(error.code)
+        ? SCHEMA_OUTDATED_MESSAGE
+        : 'Không xoá được tài khoản. Hãy kiểm tra kết nối và thử lại.';
     }
-  }, [userId]);
+    outbox.current = [];
+    clearDevice(id);
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    return null;
+  }, [userId, clearDevice]);
+
+  const syncNow = useCallback(async () => {
+    await reload.current?.();
+  }, []);
 
   const today = todayKey();
   const baseline = useMemo(() => previousSnapshot(data.snapshots, today), [data.snapshots, today]);
+  const categories = useMemo(() => mergeCategories(data.categories), [data.categories]);
 
   const value = useMemo<Store>(
     () => ({
+      authReady,
       loaded,
       user,
       session,
       assets: data.assets,
       transactions: data.transactions,
       goals: data.goals,
+      budgets: data.budgets,
+      recurring: data.recurring,
+      categories,
+      customCategories: data.categories,
+      trades: data.trades,
+      contributions: data.contributions,
+      snapshots: data.snapshots,
       baseline,
+      pendingCount,
       syncError,
       dismissSyncError: () => setSyncError(null),
+      syncNow,
       saveAsset,
       deleteAsset,
+      adjustBalance,
       saveTransaction,
+      saveTransactions,
       deleteTransaction,
-      refreshMarketPrices,
-      pricesRefreshing,
       saveGoal,
       deleteGoal,
+      contribute,
+      removeContribution,
+      saveBudget,
+      saveBudgets,
+      deleteBudget,
+      saveRecurring,
+      deleteRecurring,
+      recordOccurrence,
+      skipOccurrence,
+      saveCategory,
+      deleteCategory,
+      saveTrade,
+      deleteTrade,
+      refreshMarketPrices,
+      pricesRefreshing,
       signOut,
+      deleteAccount,
     }),
     // `user` is tracked via userId: a refreshed token must not re-render consumers needlessly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, userId, session, data, baseline, syncError, saveAsset, deleteAsset, saveTransaction, deleteTransaction, refreshMarketPrices, pricesRefreshing, saveGoal, deleteGoal, signOut],
+    [
+      authReady,
+      loaded,
+      userId,
+      session,
+      data,
+      categories,
+      baseline,
+      pendingCount,
+      syncError,
+      syncNow,
+      saveAsset,
+      deleteAsset,
+      adjustBalance,
+      saveTransaction,
+      saveTransactions,
+      deleteTransaction,
+      saveGoal,
+      deleteGoal,
+      contribute,
+      removeContribution,
+      saveBudget,
+      saveBudgets,
+      deleteBudget,
+      saveRecurring,
+      deleteRecurring,
+      recordOccurrence,
+      skipOccurrence,
+      saveCategory,
+      deleteCategory,
+      saveTrade,
+      deleteTrade,
+      refreshMarketPrices,
+      pricesRefreshing,
+      signOut,
+      deleteAccount,
+    ],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

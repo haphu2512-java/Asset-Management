@@ -4,16 +4,25 @@
 
 ## Tính năng
 
-- **Tổng quan:** tài sản ròng, biểu đồ cơ cấu tài sản, thu chi và cơ cấu chi tiêu của tháng hiện tại.
-- **Tài sản:** Tiền mặt, Cổ phiếu, Crypto, Cho vay (cộng vào tài sản) và Đang nợ (trừ khỏi tài sản ròng).
-  Cổ phiếu và crypto có thể nhập **mã và số lượng** (ví dụ `FPT` × 100, `BTC` × 0,05); giá trị tự cập nhật theo giá thị trường
-  khi mở app và mỗi 15 phút, hoặc bấm **Cập nhật giá**. Giá cổ phiếu Việt Nam lấy từ VNDirect, giá crypto (VND) từ CoinGecko.
-- **Thu chi:** ghi thu nhập và chi tiêu theo danh mục, xem theo từng tháng.
-  **Nhập nhanh:** gõ `cafe 35k` hoặc `cafe 35k, xăng 50k` rồi bấm Thêm, hoặc bấm 📷 để chụp/chọn ảnh hoá đơn; AI tự đọc số tiền,
-  ngày và phân loại. Khi AI không phản hồi, ghi chú dạng chữ vẫn được phân loại bằng từ khoá trên máy.
-- **Mục tiêu:** đặt mục tiêu tiết kiệm (ví dụ 100tr trong 1 năm), xem tiến độ, số tiền cần để dành mỗi tháng, góp thêm,
-  và hỏi AI cách đạt mục tiêu dựa trên thu chi thực tế.
-- **AI:** gửi số liệu tài sản, thu chi 3 tháng gần nhất và các mục tiêu cho Google Gemini để nhận phân tích và lời khuyên.
+- **Tổng quan:** tài sản ròng và thay đổi so với hôm qua, thu chi tháng này, ngân sách, khoản định kỳ sắp đến hạn,
+  cơ cấu tài sản. Bấm vào từng mục để xem chi tiết. Có nút ẩn số dư và giao diện sáng/tối.
+- **Tài sản và ví:** Tiền mặt, Ngân hàng, Tiết kiệm, Cổ phiếu, Crypto, Vàng, Ngoại tệ, Cho vay, Đang nợ.
+  Ví (tiền mặt, ngân hàng) gắn với giao dịch nên số dư tự cộng trừ; có chuyển khoản giữa các ví và điều chỉnh số dư.
+  Cổ phiếu, crypto, vàng, ngoại tệ nhập **mã và số lượng**, giá tự cập nhật (VNDirect, CoinGecko, open.er-api.com),
+  có sổ lệnh mua/bán, **giá vốn bình quân và lãi/lỗ**. Vàng SJC có thể tự nhập giá. Tiết kiệm, khoản vay, khoản nợ có
+  lãi suất, kỳ hạn, ngày đáo hạn.
+- **Thu chi:** ghi thu, chi, chuyển khoản theo danh mục và danh mục con tự tạo; xem theo ngày hoặc tháng; tìm kiếm và lọc.
+  **Nhập nhanh:** gõ `cafe 35k, xăng 50k` hoặc chụp hoá đơn để AI đọc. Xoá nhầm có nút **Hoàn tác**.
+- **Ngân sách:** hạn mức theo danh mục, cảnh báo ở 80% và khi vượt, gợi ý theo chi tiêu 3 tháng hoặc quy tắc 50/30/20.
+- **Giao dịch định kỳ:** lương, tiền nhà, hoá đơn tự ghi hoặc nhắc xác nhận khi đến hạn.
+- **Mục tiêu:** mục tiêu số tiền hoặc góp định kỳ (tuần, tháng, quý), gắn với một tài khoản để mỗi lần góp tự chuyển tiền
+  từ ví, có lịch sử góp.
+- **Báo cáo:** biểu đồ tài sản ròng theo thời gian, so sánh tháng này với tháng trước, tổng kết năm, hiệu quả đầu tư.
+- **Cố vấn AI:** trò chuyện nhiều lượt với Google Gemini dựa trên số liệu của chính bạn.
+- **Dữ liệu:** xuất và nhập giao dịch bằng CSV (mở được bằng Excel).
+- **Dùng khi mất mạng:** thay đổi được lưu trên máy và tự đồng bộ khi có mạng trở lại.
+- **Bảo mật và nhắc nhở:** khoá app bằng vân tay/khuôn mặt, quên mật khẩu bằng mã gửi qua email, xoá tài khoản,
+  nhắc ghi chi tiêu hằng ngày và nhắc các khoản đến hạn.
 
 Ô số tiền nhận các cách nhập như `23.000.000`, `23tr`, `23000k`, `1,5tr` hoặc `2 tỷ`.
 
@@ -22,13 +31,8 @@
 Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem [docs/SETUP.md](docs/SETUP.md).
 
 1. Tạo file `.env` từ `.env.example` và điền URL, anon key của project Supabase.
-2. Chạy các file SQL trong `supabase/migrations/` theo thứ tự tên file (SQL editor của Supabase, hoặc `supabase db push`):
-   - `..._base_schema.sql` tạo bảng `assets`, `transactions` và bật RLS để mỗi người chỉ đọc/ghi được dữ liệu của mình.
-     Nếu database đã có hai bảng này, file chỉ bật lại RLS và thêm policy, không đụng tới dữ liệu.
-   - `..._market_prices_and_goals.sql` thêm cột mã/số lượng/giá cho bảng `assets` và tạo bảng `goals`.
-   - `..._ai_usage.sql` tạo hạn mức AI theo ngày cho mỗi người dùng (mặc định 50 lượt, sửa `DAILY_AI_LIMIT`
-     trong `supabase/functions/_shared/gemini.ts`).
-   - `..._asset_snapshots.sql` tạo bảng `asset_snapshots` lưu giá trị tài sản mỗi ngày, để app hiện tăng/giảm so với hôm qua.
+2. Chạy các file SQL trong `supabase/migrations/` theo thứ tự tên file (SQL editor của Supabase, hoặc `supabase db push`).
+   Danh sách và ý nghĩa từng file có trong [docs/SETUP.md](docs/SETUP.md). File nào cũng chạy lại được mà không mất dữ liệu.
 3. Đặt API key của Google Gemini và deploy các Edge Function:
 
    ```bash
@@ -36,6 +40,8 @@ Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem 
    supabase functions deploy advisor
    supabase functions deploy parse-transaction
    ```
+
+   Hạn mức AI mặc định 50 lượt mỗi người mỗi ngày, sửa `DAILY_AI_LIMIT` trong `supabase/functions/_shared/gemini.ts`.
 
    Edge Function chỉ phục vụ người dùng đã đăng nhập: gọi bằng anon key mà không có phiên đăng nhập sẽ bị trả 401.
 4. Khi build bằng EAS, file `.env` không được gửi lên, nên cần khai báo biến môi trường trên EAS cho từng môi trường:
@@ -49,7 +55,7 @@ Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem 
 
 ## Chạy thử trên điện thoại
 
-1. Cài [Node.js](https://nodejs.org) 20 trở lên và app **Expo Go** trên điện thoại.
+1. Cài [Node.js](https://nodejs.org) 22 trở lên và app **Expo Go** trên điện thoại.
 2. Trong thư mục dự án:
 
    ```bash
@@ -59,24 +65,40 @@ Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem 
 
 3. Quét mã QR bằng Expo Go. Điện thoại và máy tính cần chung mạng Wi-Fi (hoặc chạy `npx expo start --tunnel`).
 
+Khoá app bằng sinh trắc học và thông báo nhắc hoạt động đầy đủ trên bản build (APK), trong Expo Go có thể bị hạn chế.
+
 ## Phát triển
 
 ```bash
-npm test          # unit test cho phần tính toán, mục tiêu, nhập nhanh và giá thị trường
+npm test          # unit test cho phần tính toán: sổ ví, ngân sách, định kỳ, đầu tư, báo cáo, CSV, nhắc nhở
 npm run typecheck # kiểm tra kiểu TypeScript
+npm run check     # cả hai lệnh trên
 ```
+
+## CI/CD
+
+- `.github/workflows/ci.yml`: mỗi pull request và mỗi lần push chạy typecheck, unit test, đóng gói thử app (web export)
+  và kiểm tra kiểu Edge Function bằng Deno. Push lên `main` có thay đổi phần app sẽ build APK (profile `preview`);
+  tag `v*` build bản `production`. Cần secret `EXPO_TOKEN`, thiếu thì bước build tự bỏ qua.
+- `.github/workflows/supabase-deploy.yml`: khi `supabase/` thay đổi trên `main`, tự chạy migration mới và deploy lại
+  Edge Function. Cần ba secret `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`; thiếu thì tự bỏ qua.
+- `.github/dependabot.yml`: mở pull request cập nhật thư viện hằng tuần (các gói đi theo Expo SDK chỉ nhận bản vá).
 
 ## Cấu trúc
 
 ```
-App.tsx                         thanh tab và khung app
-src/finance.ts                  kiểu dữ liệu, danh mục, tính tổng, mục tiêu, đọc số tiền VND, nhập nhanh offline
-src/prices.ts                   lấy giá cổ phiếu và crypto, tính lại giá trị tài sản
-src/store.tsx                   trạng thái chung, đồng bộ Supabase, tự cập nhật giá
-src/advisor.ts                  gọi Edge Function `advisor` để phân tích tài chính
-src/quickEntry.ts               gọi Edge Function `parse-transaction` cho nhập nhanh và hoá đơn
-src/screens/                    các màn hình Tổng quan, Tài sản, Thu chi, Mục tiêu, AI, Đăng nhập
-src/components/                 biểu đồ, form nhập liệu, thanh nhập nhanh
+App.tsx                         khung app: header, thanh tab, nút +, khoá app, hướng dẫn lần đầu
+src/finance.ts                  kiểu dữ liệu, danh mục, tính tổng, mục tiêu, đọc số tiền VND
+src/ledger.ts                   ví và giao dịch: dòng tiền, chuyển khoản, điều chỉnh số dư, tìm kiếm
+src/budgets.ts, recurring.ts    ngân sách và giao dịch định kỳ
+src/investments.ts, prices.ts   giá vốn, lãi/lỗ, lãi tiết kiệm; lấy giá cổ phiếu, crypto, vàng, ngoại tệ
+src/reports.ts, csv.ts          báo cáo và xuất/nhập CSV
+src/reminders.ts, notifications.ts  lên lịch thông báo nhắc
+src/store.tsx, sync.ts          trạng thái chung, bộ nhớ đệm, hàng đợi đồng bộ khi mất mạng
+src/theme.tsx, prefs.tsx, nav.tsx   giao diện sáng/tối, cài đặt trên máy, điều hướng
+src/advisor.ts, quickEntry.ts   gọi Edge Function `advisor` và `parse-transaction`
+src/screens/                    các màn hình
+src/components/                 thành phần giao diện dùng chung, biểu đồ, form
 supabase/functions/             Edge Function giữ API key Gemini trên server, kiểm tra đăng nhập và hạn mức
 supabase/migrations/            thay đổi cấu trúc database
 ```

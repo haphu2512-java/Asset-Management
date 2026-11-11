@@ -1,525 +1,280 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { describeAdviceError, getGoalAdvice } from '../advisor';
+import { useMemo, useRef, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
+import { goalQuestion } from '../advisor';
+import { walletOptions } from '../components/accounts';
+import { DateField } from '../components/DateField';
 import { GoalForm } from '../components/GoalForm';
-import { Icon, type IconName } from '../components/Icon';
-import {
-  formatDigits,
-  formatVnd,
-  getGoalCategory,
-  goalProgress,
-  parseVnd,
-  todayKey,
-  type Goal,
-  type GoalCategoryId,
-} from '../finance';
-import { newId, useStore } from '../store';
-import { colors, ui } from '../theme';
+import { type IconName } from '../components/Icon';
+import { Chips, Field, Sheet } from '../components/Sheet';
+import { useToast } from '../components/Toast';
+import { AmountInput, Button, Card, CategoryBadge, EmptyState, LinkText, ProgressBar } from '../components/ui';
+import { formatDigits, getGoalCategory, goalProgress, parseVndExpression, todayKey, type Goal } from '../finance';
+import { haptic } from '../haptics';
+import { useNav } from '../nav';
+import { usePrefs } from '../prefs';
+import { useStore } from '../store';
+import { font, useMoney, useTheme } from '../theme';
 
-function formatDate(date: string): string {
+const shortDate = (date: string) => {
   const [y, m, d] = date.split('-');
   return `${Number(d)}/${Number(m)}/${y}`;
+};
+const NO_WALLET = 'none';
+const HISTORY_LIMIT = 5;
+
+/** Sheet for putting money into a goal, optionally taking it from a wallet. */
+function ContributeSheet({ goal, onClose }: { goal: Goal | null; onClose: () => void }) {
+  const { ui } = useTheme();
+  const { assets, contribute, removeContribution, contributions } = useStore();
+  const { prefs } = usePrefs();
+  const toast = useToast();
+  const format = useMoney();
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(todayKey());
+  const [wallet, setWallet] = useState(NO_WALLET);
+  const [error, setError] = useState('');
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+
+  // Prefill each time the sheet opens for a goal.
+  if (goal && openedFor !== goal.id) {
+    const p = goalProgress(goal);
+    setOpenedFor(goal.id);
+    setAmount(p.periodAmount > 0 ? formatDigits(Math.min(p.periodAmount, p.remaining || p.periodAmount)) : '');
+    setDate(todayKey());
+    setWallet(goal.assetId && prefs.lastAccountId && prefs.lastAccountId !== goal.assetId ? prefs.lastAccountId : NO_WALLET);
+    setError('');
+  }
+  if (!goal && openedFor) setOpenedFor(null);
+
+  const target = goal?.assetId ? assets.find((a) => a.id === goal.assetId) : undefined;
+  const wallets = walletOptions(assets, wallet).filter((o) => o.id !== goal?.assetId);
+
+  // Read the contributions as they are when Undo is pressed, not as they were when the toast opened.
+  const latest = useRef(contributions);
+  latest.current = contributions;
+
+  const save = () => {
+    if (!goal) return;
+    const value = parseVndExpression(amount);
+    if (!value || value <= 0) return setError('Số tiền không hợp lệ. Ví dụ: 400k hoặc 2tr.');
+    const before = new Set(contributions.map((c) => c.id));
+    contribute(goal.id, value, { accountId: wallet === NO_WALLET ? undefined : wallet, date });
+    haptic('success');
+    onClose();
+    toast.show({
+      message: `Đã góp ${format(value)} vào "${goal.name}".`,
+      tone: 'success',
+      actionLabel: 'Hoàn tác',
+      onAction: () => {
+        // The newest contribution of this goal that was not there before.
+        const added = latest.current.find((c) => c.goalId === goal.id && !before.has(c.id));
+        if (added) removeContribution(added.id);
+      },
+    });
+  };
+  return (
+    <Sheet visible={!!goal} title={goal ? `Góp vào "${goal.name}"` : ''} onClose={onClose} onSave={save} saveLabel="Góp" error={error}>
+      <Field label="Số tiền" icon="wallet">
+        <AmountInput value={amount} onChangeText={setAmount} placeholder="Ví dụ: 400k" autoFocus accessibilityLabel="Số tiền góp" />
+      </Field>
+      <Field label="Ngày góp" icon="calendar">
+        <DateField value={date} onChange={setDate} shortcuts />
+      </Field>
+      {target ? (
+        <Field
+          label="Lấy tiền từ ví"
+          icon="transfer"
+          hint={
+            wallet === NO_WALLET
+              ? `Chỉ ghi nhận tiến độ, không thay đổi số dư ví nào.`
+              : `App sẽ ghi một khoản chuyển từ ví này sang "${target.name}".`
+          }
+        >
+          <Chips options={[{ id: NO_WALLET, label: 'Không trừ ví', icon: null }, ...wallets]} value={wallet} onChange={setWallet} showIcons />
+        </Field>
+      ) : (
+        <Text style={ui.label}>
+          Mẹo: gắn mục tiêu với một tài khoản (bấm Sửa) để mỗi lần góp tự chuyển tiền từ ví sang tài khoản đó.
+        </Text>
+      )}
+    </Sheet>
+  );
 }
 
-function GoalCard({ goal, onEdit }: { goal: Goal; onEdit: () => void }) {
-  const { assets, transactions, goals, saveGoal, saveTransaction } = useStore();
-  const [contribution, setContribution] = useState('');
-  const [showCustomInput, setShowCustomInput] = useState(false);
-  const [recordExpense, setRecordExpense] = useState(false);
-  const [advice, setAdvice] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+function GoalCard({ goal, onEdit, onContribute }: { goal: Goal; onEdit: () => void; onContribute: () => void }) {
+  const { colors, ui, tone } = useTheme();
+  const { assets, contributions, removeContribution } = useStore();
+  const nav = useNav();
+  const toast = useToast();
+  const format = useMoney();
+  const [showHistory, setShowHistory] = useState(false);
 
   const p = goalProgress(goal);
   const done = p.remaining === 0;
   const cat = getGoalCategory(goal.category);
-  const isRecurring = goal.type === 'recurring';
+  const account = goal.assetId ? assets.find((a) => a.id === goal.assetId) : undefined;
+  const history = useMemo(
+    () => contributions.filter((c) => c.goalId === goal.id).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
+    [contributions, goal.id],
+  );
 
-  const doContribute = (amount: number) => {
-    setError('');
-    const nextSaved = goal.saved + amount;
-    const nextCount = (goal.contributionsCount || 0) + 1;
-    saveGoal({
-      ...goal,
-      saved: nextSaved,
-      lastContributedAt: todayKey(),
-      contributionsCount: nextCount,
-    });
-
-    if (recordExpense) {
-      saveTransaction({
-        id: newId(),
-        kind: 'expense',
-        category: goal.category === 'etf' || goal.category === 'stock' ? 'investment' : 'other-expense',
-        amount,
-        note: `Tích lũy mục tiêu: ${goal.name}`,
-        date: todayKey(),
-      });
-    }
-
-    setContribution('');
-    setShowCustomInput(false);
-  };
-
-  const handleCustomContribute = () => {
-    const value = parseVnd(contribution);
-    if (!value || value <= 0) {
-      return setError('Số tiền không hợp lệ. Ví dụ: 400k hoặc 2tr.');
-    }
-    doContribute(value);
-  };
-
-  const handleQuickRecurring = () => {
-    const amount = goal.recurringAmount || 400_000;
-    doContribute(amount);
-  };
-
-  const askAi = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setAdvice(await getGoalAdvice(goal, assets, transactions, goals));
-    } catch (e) {
-      setError(describeAdviceError(e));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const status = done
+    ? { text: 'Đã đạt mục tiêu', color: colors.income }
+    : p.overdue
+      ? { text: `Quá hạn ${shortDate(goal.deadline)}`, color: colors.expense }
+      : goal.type === 'recurring'
+        ? p.contributedThisPeriod
+          ? { text: `Đã góp ${p.currentPeriodLabel}`, color: colors.income }
+          : { text: `Chưa góp ${p.currentPeriodLabel}`, color: colors.warning }
+        : { text: `Hạn ${shortDate(goal.deadline)}`, color: colors.muted };
 
   return (
-    <View style={ui.card}>
-      {/* 1. Header: Category badge, Title & Edit button */}
+    <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <CategoryBadge icon={cat.icon as IconName} color={cat.color} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={ui.heading}>{goal.name}</Text>
+          <Text style={[ui.label, { color: tone(cat.color), fontWeight: '600' }]}>
+            {cat.label}
+            {account ? ` · ${account.name}` : ''}
+          </Text>
+        </View>
+        <Button small variant="ghost" label="Sửa" icon="edit" onPress={onEdit} accessibilityLabel={`Sửa mục tiêu ${goal.name}`} />
+      </View>
+
       <View style={ui.row}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-          <View
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
-              backgroundColor: `${cat.color}15`,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Icon name={cat.icon as IconName} size={16} color={cat.color} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[ui.heading, { fontSize: 15 }]}>{goal.name}</Text>
-            <Text style={{ fontSize: 11, color: cat.color, fontWeight: '600', marginTop: 1 }}>
-              {cat.label}
-            </Text>
-          </View>
-        </View>
-
-        <Pressable
-          onPress={onEdit}
-          hitSlop={8}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 4,
-            backgroundColor: '#FFFFFF',
-          }}
-        >
-          <Icon name="edit" size={12} color={colors.muted} />
-          <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500' }}>Sửa</Text>
-        </Pressable>
-      </View>
-
-      {/* 2. Mode & Schedule Pill */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {isRecurring && goal.recurringAmount ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 5,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              borderRadius: 4,
-              backgroundColor: colors.primaryLight,
-            }}
-          >
-            <Icon name="refresh" size={12} color={colors.primary} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-              Định kỳ: {formatVnd(goal.recurringAmount)} / {goal.frequency === 'weekly' ? 'tuần' : goal.frequency === 'quarterly' ? 'quý' : 'tháng'}
-            </Text>
-          </View>
-        ) : null}
-
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-            borderRadius: 4,
-            backgroundColor: colors.background,
-            borderWidth: 1,
-            borderColor: colors.borderSubtle,
-          }}
-        >
-          <Icon name="calendar" size={11} color={colors.muted} />
-          <Text style={{ fontSize: 11, color: colors.muted }}>
-            Hạn: {formatDate(goal.deadline)}
-          </Text>
-        </View>
-
-        {goal.contributionsCount ? (
-          <Text style={{ fontSize: 11, color: colors.muted }}>
-            · Đã góp {goal.contributionsCount} kỳ
-          </Text>
-        ) : null}
-      </View>
-
-      {/* 3. Amounts & Progress Bar */}
-      <View style={[ui.row, { marginTop: 2 }]}>
         <View>
-          <Text style={{ fontSize: 11, color: colors.muted }}>Đã tích lũy</Text>
-          <Text style={[ui.text, { fontSize: 16, fontWeight: '700', color: colors.primary }]}>
-            {formatVnd(goal.saved)}
-          </Text>
+          <Text style={ui.label}>Đã tích lũy</Text>
+          <Text style={{ fontSize: font.title, fontWeight: '800', color: colors.primary }}>{format(goal.saved)}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontSize: 11, color: colors.muted }}>Mục tiêu tổng</Text>
-          <Text style={[ui.text, { fontSize: 15, fontWeight: '600' }]}>
-            {formatVnd(goal.target)}
-          </Text>
+          <Text style={ui.label}>Mục tiêu</Text>
+          <Text style={[ui.text, { fontWeight: '600' }]}>{format(goal.target)}</Text>
         </View>
       </View>
-
-      {/* Progress line */}
-      <View style={{ height: 6, backgroundColor: colors.borderSubtle, borderRadius: 3, overflow: 'hidden' }}>
-        <View
-          style={{
-            width: `${Math.min(100, Math.round(p.ratio * 100))}%`,
-            height: '100%',
-            backgroundColor: done ? colors.income : colors.primary,
-          }}
-        />
-      </View>
-
+      <ProgressBar
+        ratio={p.ratio}
+        color={done ? colors.income : colors.primary}
+        label={`Đã đạt ${Math.round(p.ratio * 100)} phần trăm mục tiêu ${goal.name}`}
+      />
       <View style={ui.row}>
-        <Text style={ui.label}>{Math.round(p.ratio * 100)}% hoàn thành</Text>
-        {done ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <Icon name="check" size={12} color={colors.income} strokeWidth={2.5} />
-            <Text style={[ui.label, { color: colors.income, fontWeight: '600' }]}>Đã hoàn thành</Text>
-          </View>
-        ) : (
-          <Text style={ui.label}>Còn thiếu {formatVnd(p.remaining)}</Text>
-        )}
+        <Text style={[ui.label, { color: status.color, fontWeight: '600' }]}>{status.text}</Text>
+        <Text style={ui.label}>{Math.round(p.ratio * 100)}%</Text>
       </View>
 
-      {/* 4. Recurring Period Status Banner */}
-      {isRecurring && !done ? (
-        <View
-          style={{
-            padding: 10,
-            borderRadius: 6,
-            borderWidth: 1,
-            backgroundColor: p.contributedThisPeriod ? '#F0FDF4' : '#FFFBEB',
-            borderColor: p.contributedThisPeriod ? '#BBF7D0' : '#FDE68A',
-            gap: 8,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Icon
-                name={p.contributedThisPeriod ? 'check' : 'clock'}
-                size={14}
-                color={p.contributedThisPeriod ? colors.income : '#B45309'}
-                strokeWidth={2.2}
-              />
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: '600',
-                  color: p.contributedThisPeriod ? colors.income : '#B45309',
-                  flex: 1,
-                }}
-              >
-                {p.contributedThisPeriod
-                  ? `Đã hoàn thành góp cho ${p.currentPeriodLabel}`
-                  : `Chưa góp cho ${p.currentPeriodLabel} (${formatVnd(goal.recurringAmount || 400_000)})`}
-              </Text>
-            </View>
-
-            {/* Quick 1-tap contribution button if not contributed yet */}
-            {!p.contributedThisPeriod ? (
-              <Pressable
-                onPress={handleQuickRecurring}
-                style={{
-                  backgroundColor: colors.primary,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  borderRadius: 4,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <Icon name="plus" size={12} color="#FFFFFF" strokeWidth={2.5} />
-                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
-                  Góp {formatVnd(goal.recurringAmount || 400_000)}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      {!isRecurring && !done ? (
-        <Text style={[ui.label, { color: p.overdue ? colors.expense : colors.muted }]}>
-          {p.overdue
-            ? `Đã quá hạn, còn thiếu ${formatVnd(p.remaining)}.`
-            : `Cần tích lũy ~${formatVnd(p.monthlyNeeded)}/tháng trong ${p.monthsLeft} tháng tới.`}
+      {!done ? (
+        <Text style={ui.text}>
+          {goal.type === 'recurring'
+            ? `Kế hoạch góp ${format(p.periodAmount)} mỗi ${p.periodUnit}. Còn thiếu ${format(p.remaining)}.`
+            : `Còn thiếu ${format(p.remaining)}. Cần để dành khoảng ${format(p.periodAmount)} mỗi ${p.periodUnit} trong ${p.monthsLeft} tháng tới.`}
         </Text>
       ) : null}
 
-      <View style={ui.divider} />
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        {!done ? <Button small label="Góp tiền" icon="plus" onPress={onContribute} style={{ flexGrow: 1 }} /> : null}
+        <Button
+          small
+          variant="secondary"
+          label="Hỏi AI"
+          icon="sparkles"
+          onPress={() => nav.push({ name: 'advisor', question: goalQuestion(goal) })}
+          style={{ flexGrow: 1 }}
+          accessibilityLabel={`Hỏi cố vấn AI về mục tiêu ${goal.name}`}
+        />
+      </View>
 
-      {/* 5. Contribution actions area */}
-      {!showCustomInput && isRecurring && p.contributedThisPeriod ? (
-        <Pressable
-          onPress={() => setShowCustomInput(true)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 5,
-            alignSelf: 'flex-start',
-            paddingVertical: 2,
-          }}
-        >
-          <Icon name="plus" size={13} color={colors.primary} />
-          <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>
-            Góp thêm vào mục tiêu này
-          </Text>
-        </Pressable>
-      ) : (
-        <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={[ui.input, { flex: 1, paddingVertical: 6 }]}
-              value={contribution}
-              onChangeText={setContribution}
-              placeholder={
-                isRecurring && goal.recurringAmount
-                  ? `Nhập số tiền khác (hoặc ${formatDigits(goal.recurringAmount)})`
-                  : 'Nhập số tiền góp (ví dụ: 400k, 2tr)'
-              }
-              autoCapitalize="none"
-              onSubmitEditing={handleCustomContribute}
-            />
-            <Pressable
-              style={[
-                ui.button,
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 5,
-                  paddingVertical: 7,
-                  paddingHorizontal: 12,
-                },
-              ]}
-              onPress={handleCustomContribute}
-            >
-              <Icon name="plus" size={13} color="#FFFFFF" strokeWidth={2.5} />
-              <Text style={[ui.buttonText, { fontSize: 13 }]}>Góp tiền</Text>
-            </Pressable>
-          </View>
-
-          {/* Optional checkbox to record as transaction */}
-          <Pressable
-            onPress={() => setRecordExpense((v) => !v)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <View
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: 3,
-                borderWidth: 1.5,
-                borderColor: recordExpense ? colors.primary : colors.muted,
-                backgroundColor: recordExpense ? colors.primary : '#FFFFFF',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {recordExpense ? <Icon name="check" size={10} color="#FFFFFF" strokeWidth={3} /> : null}
-            </View>
-            <Text style={{ fontSize: 12, color: colors.muted }}>
-              Đồng thời ghi vào Thu chi (khoản đầu tư/tiết kiệm)
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* 6. AI Action button */}
-      <Pressable
-        onPress={askAi}
-        disabled={loading}
-        style={{
-          marginTop: 2,
-          paddingVertical: 4,
-          alignSelf: 'flex-start',
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 5,
-        }}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : (
-          <>
-            <Icon name="sparkles" size={14} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
-              Tư vấn chiến lược đạt mục tiêu
-            </Text>
-          </>
-        )}
-      </Pressable>
-
-      {error ? <Text style={{ color: colors.expense, fontSize: 12 }}>{error}</Text> : null}
-
-      {advice ? (
-        <View
-          style={{
-            marginTop: 4,
-            padding: 10,
-            backgroundColor: colors.background,
-            borderRadius: 4,
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}
-        >
-          <Text style={[ui.text, { fontSize: 13, lineHeight: 20 }]} selectable>
-            {advice}
-          </Text>
+      {history.length > 0 ? (
+        <View style={{ gap: 6 }}>
+          <LinkText
+            label={showHistory ? 'Ẩn lịch sử góp' : `Xem lịch sử góp (${history.length} lần)`}
+            onPress={() => setShowHistory((v) => !v)}
+          />
+          {showHistory
+            ? history.slice(0, HISTORY_LIMIT).map((c) => (
+                <View key={c.id} style={ui.row}>
+                  <Text style={ui.text}>
+                    {shortDate(c.date)} · {format(c.amount)}
+                    {c.accountId ? ` · từ ${assets.find((a) => a.id === c.accountId)?.name ?? 'ví đã xoá'}` : ''}
+                  </Text>
+                  <Button
+                    small
+                    variant="ghost"
+                    label="Xoá"
+                    accessibilityLabel={`Xoá lần góp ${format(c.amount)} ngày ${shortDate(c.date)}`}
+                    onPress={() => {
+                      removeContribution(c.id);
+                      toast.show({ message: 'Đã xoá lần góp và hoàn lại số dư.', tone: 'neutral' });
+                    }}
+                  />
+                </View>
+              ))
+            : null}
+          {showHistory && history.length > HISTORY_LIMIT ? (
+            <Text style={ui.label}>Hiển thị {HISTORY_LIMIT} lần gần nhất.</Text>
+          ) : null}
         </View>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
 export function GoalsScreen() {
-  const { goals, saveGoal, deleteGoal } = useStore();
-  const [selectedFilter, setSelectedFilter] = useState<GoalCategoryId | 'all'>('all');
+  const { ui } = useTheme();
+  const { goals } = useStore();
+  const format = useMoney();
   const [editing, setEditing] = useState<Goal | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [contributing, setContributing] = useState<Goal | null>(null);
 
-  const open = (goal: Goal | null) => {
+  const sorted = useMemo(
+    () =>
+      [...goals].sort((a, b) => {
+        const da = a.saved >= a.target ? 1 : 0;
+        const db = b.saved >= b.target ? 1 : 0;
+        return da - db || a.deadline.localeCompare(b.deadline);
+      }),
+    [goals],
+  );
+  const totalSaved = goals.reduce((s, g) => s + g.saved, 0);
+  const totalTarget = goals.reduce((s, g) => s + g.target, 0);
+
+  const openForm = (goal: Goal | null) => {
     setEditing(goal);
     setFormOpen(true);
   };
 
-  const totalSaved = goals.reduce((s, g) => s + g.saved, 0);
-  const totalTarget = goals.reduce((s, g) => s + g.target, 0);
-  const totalMonthlyRecurring = goals
-    .filter((g) => g.type === 'recurring' && g.recurringAmount)
-    .reduce((s, g) => s + (g.recurringAmount || 0), 0);
-
-  const filteredGoals =
-    selectedFilter === 'all'
-      ? goals
-      : goals.filter((g) => (g.category ?? 'saving') === selectedFilter);
-
   return (
     <View style={ui.screen}>
       <ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
-        {/* 1. Summary Overview Card */}
-        {goals.length > 0 ? (
-          <View style={[ui.card, { padding: 14 }]}>
-            <View style={[ui.row, { marginBottom: 6 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="goals" size={16} color={colors.primary} />
-                <Text style={[ui.label, { fontWeight: '700', letterSpacing: 0.5 }]}>
-                  TỔNG QUAN MỤC TIÊU
-                </Text>
-              </View>
-              <Text style={{ fontSize: 12, color: colors.muted }}>
-                {goals.length} mục tiêu
-              </Text>
-            </View>
-
-            <View style={[ui.row, { alignItems: 'flex-end' }]}>
-              <View>
-                <Text style={{ fontSize: 12, color: colors.muted }}>Tổng đã tích lũy</Text>
-                <Text style={{ fontSize: 20, fontWeight: '800', color: colors.primary }}>
-                  {formatVnd(totalSaved)}
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 11, color: colors.muted }}>Mục tiêu tổng</Text>
-                <Text style={{ fontSize: 14, fontWeight: '600' }}>
-                  {formatVnd(totalTarget)}
-                </Text>
-              </View>
-            </View>
-
-            {totalMonthlyRecurring > 0 ? (
-              <View
-                style={{
-                  marginTop: 10,
-                  paddingTop: 8,
-                  borderTopWidth: 1,
-                  borderTopColor: colors.borderSubtle,
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Icon name="refresh" size={13} color={colors.primary} />
-                  <Text style={{ fontSize: 12, color: colors.muted }}>
-                    Kế hoạch định kỳ hàng tháng:
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
-                  {formatVnd(totalMonthlyRecurring)}/tháng
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* 2. Empty state card */}
         {goals.length === 0 ? (
-          <View style={ui.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon name="goals" size={18} color={colors.primary} />
-              <Text style={ui.heading}>Chưa có mục tiêu</Text>
-            </View>
-            <Text style={ui.label}>
-              Bấm nút [+] để lập kế hoạch tài chính. Bạn có thể chọn góp định kỳ hàng tháng (như 400k vào quỹ ETF) hoặc đặt mục tiêu số tiền lớn (Mua nhà, Mua xe, Quỹ dự phòng).
-            </Text>
-          </View>
-        ) : null}
-
-        {/* 3. Goals list */}
-        {filteredGoals.map((g) => (
-          <GoalCard key={g.id} goal={g} onEdit={() => open(g)} />
-        ))}
+          <EmptyState
+            icon="goals"
+            title="Chưa có mục tiêu nào"
+            message="Đặt một mục tiêu như quỹ dự phòng, mua xe hay tích sản ETF. App sẽ tính mỗi kỳ bạn cần để dành bao nhiêu."
+            actionLabel="Tạo mục tiêu đầu tiên"
+            onAction={() => openForm(null)}
+          />
+        ) : (
+          <>
+            <Card>
+              <View style={ui.row}>
+                <View>
+                  <Text style={ui.label}>Tổng đã tích lũy cho {goals.length} mục tiêu</Text>
+                  <Text style={ui.big}>{format(totalSaved)}</Text>
+                </View>
+              </View>
+              <ProgressBar ratio={totalTarget > 0 ? totalSaved / totalTarget : 0} label="Tiến độ chung của các mục tiêu" />
+              <Text style={ui.label}>trên tổng mục tiêu {format(totalTarget)}</Text>
+            </Card>
+            {sorted.map((g) => (
+              <GoalCard key={g.id} goal={g} onEdit={() => openForm(g)} onContribute={() => setContributing(g)} />
+            ))}
+            <Button variant="secondary" label="Thêm mục tiêu" icon="plus" onPress={() => openForm(null)} />
+          </>
+        )}
       </ScrollView>
-
-      <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm mục tiêu">
-        <Icon name="plus" size={22} color="#FFFFFF" strokeWidth={2.5} />
-      </Pressable>
-
-      <GoalForm
-        visible={formOpen}
-        goal={editing}
-        onClose={() => setFormOpen(false)}
-        onSave={saveGoal}
-        onDelete={deleteGoal}
-      />
+      <GoalForm visible={formOpen} goal={editing} onClose={() => setFormOpen(false)} />
+      <ContributeSheet goal={contributing} onClose={() => setContributing(null)} />
     </View>
   );
 }

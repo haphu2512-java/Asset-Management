@@ -1,34 +1,67 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 import { AssetForm } from '../components/AssetForm';
 import { ChangeBadge } from '../components/ChangeBadge';
-import { CategoryBadge, getCategoryIcon, Icon } from '../components/Icon';
+import { getCategoryIcon } from '../components/Icon';
+import { Chips } from '../components/Sheet';
+import { Button, Card, CardHeader, CategoryBadge, EmptyState, ListItem } from '../components/ui';
 import {
   CATEGORIES,
   changeLabel,
   compareValue,
   formatDigits,
-  formatVnd,
+  isHolding,
   isMarketPriced,
   summarize,
   todayKey,
   type Asset,
   type CategoryId,
 } from '../finance';
+import { interestInfo, portfolioPerformance } from '../investments';
+import { useNav } from '../nav';
 import { useStore } from '../store';
-import { colors, ui } from '../theme';
+import { font, useMoney, useTheme } from '../theme';
+
+const formatQuantity = (n: number) => String(Math.round(n * 1e8) / 1e8).replace('.', ',');
+const shortDate = (date: string) => {
+  const [y, m, d] = date.split('-');
+  return `${Number(d)}/${Number(m)}/${y}`;
+};
+
+/** One line describing an asset: its holding and price, its term, or who it is owed to. */
+export function assetSubtitle(a: Asset, today: string): string | undefined {
+  if (isHolding(a)) {
+    const unit = a.category === 'gold' ? ' chỉ' : '';
+    const price = a.price ? ` × ${formatDigits(a.price)} ₫` : '';
+    return `${a.category === 'gold' ? '' : `${a.symbol} · `}${formatQuantity(a.quantity!)}${unit}${price}${a.priceMode === 'manual' ? ' (giá tự nhập)' : ''}`;
+  }
+  const info = interestInfo(a, today);
+  const parts = [
+    a.counterparty,
+    a.interestRate ? `${String(a.interestRate).replace('.', ',')}%/năm` : null,
+    a.dueDate
+      ? info?.daysLeft != null && info.daysLeft < 0
+        ? `quá hạn từ ${shortDate(a.dueDate)}`
+        : `${a.category === 'saving' ? 'đáo hạn' : 'đến hạn'} ${shortDate(a.dueDate)}`
+      : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
 
 export function AssetsScreen() {
-  const { assets, baseline, saveAsset, deleteAsset, refreshMarketPrices, pricesRefreshing } = useStore();
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
-  const [editing, setEditing] = useState<Asset | null>(null);
+  const { colors, ui } = useTheme();
+  const { assets, trades, baseline, refreshMarketPrices, pricesRefreshing } = useStore();
+  const nav = useNav();
+  const format = useMoney();
+  const [filter, setFilter] = useState<CategoryId | 'all'>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [priceNote, setPriceNote] = useState('');
 
-  const s = summarize(assets);
+  const today = todayKey();
+  const s = useMemo(() => summarize(assets), [assets]);
+  const portfolio = useMemo(() => portfolioPerformance(assets, trades), [assets, trades]);
   const hasMarketAssets = assets.some(isMarketPriced);
   const netWorthChange = baseline ? compareValue(s.netWorth, baseline.netWorth) : null;
-  /** Change of one holding since the baseline; null for holdings added since then. */
   const assetChange = (a: Asset) =>
     baseline && a.id in baseline.amounts ? compareValue(a.amount, baseline.amounts[a.id]) : null;
 
@@ -36,392 +69,128 @@ export function AssetsScreen() {
     setPriceNote('');
     try {
       const missing = await refreshMarketPrices();
-      if (missing.length > 0) setPriceNote(`Không tìm thấy giá: ${missing.join(', ')}.`);
+      setPriceNote(missing.length > 0 ? `Không tìm thấy giá: ${missing.join(', ')}.` : 'Đã cập nhật giá mới nhất.');
     } catch {
       setPriceNote('Lỗi mạng khi cập nhật giá.');
     }
   };
 
-  const open = (asset: Asset | null) => {
-    setEditing(asset);
-    setFormOpen(true);
-  };
-
-  // Group by category to show
-  const categoriesToShow = selectedCategory === 'all'
-    ? CATEGORIES.filter((c) => assets.some((a) => a.category === c.id))
-    : CATEGORIES.filter((c) => c.id === selectedCategory);
+  const used = CATEGORIES.filter((c) => assets.some((a) => a.category === c.id));
+  const shown = filter === 'all' ? used : used.filter((c) => c.id === filter);
 
   return (
     <View style={ui.screen}>
-      <ScrollView contentContainerStyle={ui.content} showsVerticalScrollIndicator={false}>
-        {/* 1. Hero Card: Tổng quan Tài sản ròng & Tóm tắt */}
-        {assets.length > 0 ? (
-          <View style={[ui.card, { padding: 16 }]}>
-            <View style={[ui.row, { marginBottom: 4 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="shield" size={15} color={colors.primary} />
-                <Text style={[ui.label, { fontWeight: '700', letterSpacing: 0.5 }]}>
-                  TÀI SẢN RÒNG (NET WORTH)
-                </Text>
-              </View>
-
-              {hasMarketAssets ? (
-                <Pressable
-                  onPress={refresh}
-                  disabled={pricesRefreshing}
-                  hitSlop={8}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    backgroundColor: colors.primaryLight,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: `${colors.primary}25`,
-                  }}
-                >
-                  {pricesRefreshing ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <>
-                      <Icon name="refresh" size={11} color={colors.primary} />
-                      <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>
-                        Cập nhật giá
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-              ) : null}
-            </View>
-
-            <Text
-              style={[
-                ui.big,
-                { fontSize: 26, letterSpacing: -0.5, marginVertical: 4 },
-                s.netWorth < 0 && { color: colors.expense },
-              ]}
-            >
-              {formatVnd(s.netWorth)}
+      <ScrollView contentContainerStyle={ui.content}>
+        <Card>
+          <View style={ui.row}>
+            <Text style={ui.label}>Tài sản ròng</Text>
+            <Button small label="Thêm tài sản" icon="plus" onPress={() => setFormOpen(true)} />
+          </View>
+          <Text style={[ui.big, s.netWorth < 0 && { color: colors.expense }]}>{format(s.netWorth)}</Text>
+          <ChangeBadge change={netWorthChange} label={baseline ? changeLabel(baseline.date, today) : undefined} />
+          {s.totalDebt > 0 ? (
+            <Text style={ui.label}>
+              Tổng tài sản {format(s.totalAssets)} · Nợ {format(s.totalDebt)}
             </Text>
-            <ChangeBadge
-              change={netWorthChange}
-              label={baseline ? changeLabel(baseline.date, todayKey()) : undefined}
-            />
+          ) : null}
+        </Card>
 
-            {/* Quick 2-Column Stats: Tổng tài sản vs Tổng nợ */}
-            <View
-              style={{
-                flexDirection: 'row',
-                marginTop: 10,
-                paddingTop: 10,
-                borderTopWidth: 1,
-                borderTopColor: colors.borderSubtle,
-                gap: 12,
-              }}
-            >
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: '#DCFCE7',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon name="trending-up" size={15} color={colors.income} />
-                </View>
-                <View>
-                  <Text style={{ fontSize: 11, color: colors.muted }}>Tổng tài sản</Text>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
-                    {formatVnd(s.totalAssets)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={{ width: 1, backgroundColor: colors.borderSubtle }} />
-
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: s.totalDebt > 0 ? '#FEE2E2' : '#F1F5F9',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon
-                    name="debt"
-                    size={15}
-                    color={s.totalDebt > 0 ? colors.expense : colors.muted}
-                  />
-                </View>
-                <View>
-                  <Text style={{ fontSize: 11, color: colors.muted }}>Tổng nợ</Text>
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      fontWeight: '700',
-                      color: s.totalDebt > 0 ? colors.expense : colors.muted,
-                    }}
-                  >
-                    {s.totalDebt > 0 ? `-${formatVnd(s.totalDebt)}` : '0 ₫'}
-                  </Text>
-                </View>
-              </View>
+        {portfolio.cost > 0 || portfolio.realized !== 0 || portfolio.dividends !== 0 ? (
+          <Card>
+            <CardHeader title="Hiệu quả đầu tư" icon="trending-up" />
+            <View style={ui.row}>
+              <Text style={ui.label}>Lãi/lỗ đang nắm giữ</Text>
+              <Text style={{ fontSize: font.body, fontWeight: '700', color: portfolio.unrealized >= 0 ? colors.income : colors.expense }}>
+                {portfolio.unrealized >= 0 ? '+' : '-'}
+                {format(Math.abs(portfolio.unrealized))}
+                {portfolio.cost > 0 ? ` (${((portfolio.unrealized / portfolio.cost) * 100).toFixed(1).replace('.', ',')}%)` : ''}
+              </Text>
             </View>
-
-            {hasMarketAssets ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
-                <Icon name="clock" size={11} color={colors.muted} />
-                <Text style={{ fontSize: 11, color: colors.muted }}>{lastPriceUpdate(assets)}</Text>
-                {priceNote ? (
-                  <Text style={{ fontSize: 11, color: colors.expense, marginLeft: 4 }}>
-                    • {priceNote}
-                  </Text>
-                ) : null}
+            <View style={ui.row}>
+              <Text style={ui.label}>Giá vốn → Giá trị</Text>
+              <Text style={ui.text}>
+                {format(portfolio.cost)} → {format(portfolio.value)}
+              </Text>
+            </View>
+            {portfolio.realized !== 0 || portfolio.dividends !== 0 ? (
+              <View style={ui.row}>
+                <Text style={ui.label}>Đã chốt + cổ tức</Text>
+                <Text style={[ui.text, { color: portfolio.realized + portfolio.dividends >= 0 ? colors.income : colors.expense }]}>
+                  {portfolio.realized + portfolio.dividends >= 0 ? '+' : '-'}
+                  {format(Math.abs(portfolio.realized + portfolio.dividends))}
+                </Text>
               </View>
             ) : null}
-          </View>
+          </Card>
         ) : null}
 
-        {/* 2. Thanh lọc danh mục ngang (Horizontal Category Filter Chips) */}
-        {assets.length > 0 ? (
-          <View style={{ marginVertical: 2 }}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
-            >
-              <Pressable
-                onPress={() => setSelectedCategory('all')}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: selectedCategory === 'all' ? colors.primary : colors.border,
-                  backgroundColor: selectedCategory === 'all' ? colors.primary : colors.card,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: selectedCategory === 'all' ? '600' : '500',
-                    color: selectedCategory === 'all' ? '#FFFFFF' : colors.text,
-                  }}
-                >
-                  Tất cả ({assets.length})
-                </Text>
-              </Pressable>
-
-              {CATEGORIES.map((category) => {
-                const count = assets.filter((a) => a.category === category.id).length;
-                if (count === 0) return null;
-                const isSelected = selectedCategory === category.id;
-                return (
-                  <Pressable
-                    key={category.id}
-                    onPress={() => setSelectedCategory(category.id)}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 5,
-                      paddingHorizontal: 11,
-                      paddingVertical: 6,
-                      borderRadius: 16,
-                      borderWidth: 1,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      backgroundColor: isSelected ? colors.primaryLight : colors.card,
-                    }}
-                  >
-                    <Icon
-                      name={getCategoryIcon(category.id)}
-                      size={13}
-                      color={isSelected ? colors.primary : category.color}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: isSelected ? '600' : '500',
-                        color: isSelected ? colors.primary : colors.text,
-                      }}
-                    >
-                      {category.label} ({count})
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* 3. Danh sách tài sản nhóm gọn gàng */}
-        {assets.length === 0 ? (
-          <View style={[ui.card, { alignItems: 'center', paddingVertical: 36, gap: 10 }]}>
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: colors.primaryLight,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="assets" size={26} color={colors.primary} />
+        {hasMarketAssets ? (
+          <Card>
+            <View style={ui.row}>
+              <Text style={[ui.label, { flex: 1 }]}>
+                {priceNote || 'Giá cổ phiếu, crypto, vàng và ngoại tệ tự cập nhật mỗi 15 phút.'}
+              </Text>
+              <Button small variant="secondary" label="Cập nhật giá" icon="refresh" onPress={refresh} loading={pricesRefreshing} />
             </View>
-            <Text style={[ui.heading, { fontSize: 16 }]}>Chưa có tài sản nào</Text>
-            <Text style={[ui.label, { textAlign: 'center', maxWidth: 260, lineHeight: 18 }]}>
-              Bấm nút [+] ở góc phải dưới để thêm tiền mặt, ngân hàng, cổ phiếu, crypto, cho vay hoặc khoản nợ.
-            </Text>
-          </View>
+          </Card>
         ) : null}
 
-        {categoriesToShow.map((category) => {
-          const items = assets.filter((a) => a.category === category.id);
-          if (items.length === 0) return null;
-          const total = s.byCategory.find((c) => c.category.id === category.id)?.amount ?? 0;
+        {assets.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon="wallet"
+              title="Chưa có tài sản"
+              message="Thêm ví tiền mặt, tài khoản ngân hàng, sổ tiết kiệm, cổ phiếu, vàng hay khoản nợ để thấy toàn cảnh tài chính của bạn."
+              actionLabel="Thêm tài sản"
+              onAction={() => setFormOpen(true)}
+            />
+          </Card>
+        ) : null}
 
+        {used.length > 1 ? (
+          <Chips
+            options={[{ id: 'all', label: 'Tất cả', icon: null }, ...used]}
+            value={filter}
+            onChange={(id) => setFilter(id as CategoryId | 'all')}
+          />
+        ) : null}
+
+        {shown.map((category) => {
+          const items = assets.filter((a) => a.category === category.id).sort((a, b) => b.amount - a.amount);
+          const total = items.reduce((sum, a) => sum + a.amount, 0);
           return (
-            <View key={category.id} style={ui.card}>
-              {/* Header danh mục tinh gọn */}
-              <View
-                style={[
-                  ui.row,
-                  { paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
-                ]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                  <CategoryBadge
-                    icon={getCategoryIcon(category.id)}
-                    color={category.color}
-                    size={26}
-                    iconSize={13}
-                  />
-                  <Text style={[ui.heading, { fontSize: 13.5 }]}>{category.label}</Text>
-                  <View
-                    style={{
-                      backgroundColor: colors.borderSubtle,
-                      paddingHorizontal: 6,
-                      paddingVertical: 1,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11, color: colors.muted, fontWeight: '600' }}>
-                      {items.length}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text
-                  style={[
-                    ui.heading,
-                    { fontSize: 13.5 },
-                    category.isLiability && { color: colors.expense },
-                  ]}
-                >
-                  {category.isLiability ? '-' : ''}
-                  {formatVnd(total)}
-                </Text>
-              </View>
-
-              {/* Các tài sản trong danh mục */}
-              {items.map((a, idx) => {
+            <Card key={category.id}>
+              <CardHeader
+                title={category.label}
+                right={
+                  <Text style={{ fontSize: font.body, fontWeight: '700', color: category.isLiability ? colors.expense : colors.text }}>
+                    {category.isLiability ? '-' : ''}
+                    {format(total)}
+                  </Text>
+                }
+              />
+              {items.map((a) => {
                 const change = assetChange(a);
                 return (
-                <Pressable
-                  key={a.id}
-                  onPress={() => open(a)}
-                  style={({ pressed }) => [
-                    ui.row,
-                    {
-                      paddingVertical: 10,
-                      borderTopWidth: idx > 0 ? 1 : 0,
-                      borderTopColor: colors.borderSubtle,
-                      opacity: pressed ? 0.65 : 1,
-                    },
-                  ]}
-                >
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={[ui.text, { fontWeight: '600', fontSize: 14 }]}>{a.name}</Text>
-                    {isMarketPriced(a) ? (
-                      <Text style={[ui.label, { fontSize: 12, marginTop: 2 }]}>
-                        {a.price
-                          ? `${formatQuantity(a.quantity!)} ${a.symbol} × ${formatVnd(a.price)}`
-                          : `${formatQuantity(a.quantity!)} ${a.symbol} · đang chờ giá`}
-                      </Text>
-                    ) : (
-                      <Text style={[ui.label, { fontSize: 12, marginTop: 2 }]}>
-                        {category.label}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                      <Text
-                        style={[
-                          ui.text,
-                          { fontWeight: '700', fontSize: 14 },
-                          category.isLiability && { color: colors.expense },
-                        ]}
-                      >
-                        {category.isLiability ? '-' : ''}
-                        {formatVnd(a.amount)}
-                      </Text>
-                      {change && change.direction !== 'flat' ? (
-                        <ChangeBadge change={change} size="small" inverse={category.isLiability} />
-                      ) : null}
-                    </View>
-                    <Icon name="chevron-right" size={13} color={colors.muted} />
-                  </View>
-                </Pressable>
+                  <ListItem
+                    key={a.id}
+                    leading={<CategoryBadge icon={getCategoryIcon(a.category)} color={category.color} />}
+                    title={a.name}
+                    subtitle={assetSubtitle(a, today)}
+                    right={format(a.amount)}
+                    rightColor={a.amount < 0 || category.isLiability ? colors.expense : undefined}
+                    rightSub={change && change.direction !== 'flat' ? <ChangeBadge change={change} inverse={category.isLiability} /> : undefined}
+                    onPress={() => nav.push({ name: 'asset', id: a.id })}
+                    chevron
+                  />
                 );
               })}
-            </View>
+            </Card>
           );
         })}
       </ScrollView>
 
-      {/* Nút FAB thêm tài sản */}
-      <Pressable style={ui.fab} onPress={() => open(null)} accessibilityLabel="Thêm tài sản">
-        <Icon name="plus" size={22} color="#FFFFFF" strokeWidth={2.5} />
-      </Pressable>
-
-      <AssetForm
-        visible={formOpen}
-        asset={editing}
-        onClose={() => setFormOpen(false)}
-        onSave={saveAsset}
-        onDelete={deleteAsset}
-      />
+      <AssetForm visible={formOpen} asset={null} onClose={() => setFormOpen(false)} />
     </View>
   );
-}
-
-function formatQuantity(quantity: number): string {
-  const [whole, fraction] = String(quantity).split('.');
-  return formatDigits(Number(whole)) + (fraction ? `,${fraction}` : '');
-}
-
-function lastPriceUpdate(assets: Asset[]): string {
-  const times = assets
-    .filter(isMarketPriced)
-    .map((a) => (a.priceUpdatedAt ? Date.parse(a.priceUpdatedAt) : 0))
-    .filter((t) => t > 0);
-  if (times.length === 0) return 'Chưa có giá thị trường';
-  const d = new Date(Math.min(...times));
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `Cập nhật: ${hh}:${mm} ${d.getDate()}/${d.getMonth() + 1}`;
 }

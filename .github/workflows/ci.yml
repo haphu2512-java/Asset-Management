@@ -1,0 +1,168 @@
+name: CI & EAS Build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    # Docs-only changes don't need checks or a build.
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile (preview: APK, production: AAB)'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'android'
+        type: choice
+        options:
+          - android
+          - all
+
+# A newer push to the same branch or pull request replaces the run in progress.
+# Tag and main builds are never cancelled, so a release is not lost half-way.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Typecheck, tests & web bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
+
+      # Bundling catches what the typecheck cannot: missing modules, bad imports, broken assets.
+      - name: Bundle the app (web export)
+        run: npx expo export --platform web --output-dir dist
+        env:
+          CI: 1
+          EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+
+  functions:
+    name: Check Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # The functions resolve their own npm: imports; the app's package.json is not theirs.
+      - name: Type-check functions
+        run: deno check supabase/functions/*/index.ts
+        env:
+          DENO_NO_PACKAGE_JSON: 1
+
+  build:
+    name: EAS Cloud Build
+    needs: [app, functions]
+    # Pushes to main build a preview APK, v* tags build the production bundle; pull requests only run the checks.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Supabase-only changes don't alter the app, so they don't spend an EAS build.
+      - name: Detect app changes
+        id: changes
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -qvE '^(supabase/|\.github/|docs/)|\.md$'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide whether to build
+        id: decide
+        env:
+          HAS_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+          APP_CHANGED: ${{ steps.changes.outputs.app }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::notice::Secret EXPO_TOKEN is not set, skipping the EAS build."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$APP_CHANGED" = "false" ]; then
+            echo "::notice::No app changes in this push, skipping the EAS build."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.decide.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+
+      - name: Setup Expo & EAS
+        if: steps.decide.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.decide.outputs.run == 'true'
+        run: npm ci
+
+      - name: Build with EAS
+        if: steps.decide.outputs.run == 'true'
+        env:
+          INPUT_PROFILE: ${{ github.event.inputs.profile }}
+          INPUT_PLATFORM: ${{ github.event.inputs.platform }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ -n "$INPUT_PROFILE" ]; then PROFILE="$INPUT_PROFILE"
+          elif [ "$REF_TYPE" = "tag" ]; then PROFILE="production"
+          else PROFILE="preview"; fi
+          PLATFORM="${INPUT_PLATFORM:-android}"
+          echo "Building $PLATFORM with profile $PROFILE"
+          eas build --platform "$PLATFORM" --profile "$PROFILE" --non-interactive --no-wait

@@ -1,38 +1,44 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
-import type { Transaction } from '../finance';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
+import { isSpendable } from '../finance';
+import { usePrefs } from '../prefs';
 import { describeEntry, parseQuickEntry, type ReceiptImage } from '../quickEntry';
-import { newId } from '../store';
-import { colors, ui } from '../theme';
-import { Icon } from './Icon';
-
-type Props = { onSave: (transaction: Transaction) => Promise<boolean> };
+import { newId, useStore } from '../store';
+import { font, useTheme } from '../theme';
+import { useToast } from './Toast';
+import { Card, IconButton, Input } from './ui';
 
 /** Type "cafe 35k" or snap a receipt; the parser turns it into transactions that are saved right away. */
-export function QuickEntryBar({ onSave }: Props) {
+export function QuickEntryBar() {
+  const { colors } = useTheme();
+  const { assets, categories, saveTransactions, deleteTransaction } = useStore();
+  const { prefs } = usePrefs();
+  const toast = useToast();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   const run = async (input: { text?: string; image?: ReceiptImage }) => {
     setBusy(true);
     setError('');
-    setMessage('');
     try {
-      const { entries, offline } = await parseQuickEntry(input);
+      const { entries, offline } = await parseQuickEntry(input, categories);
       if (entries.length === 0) throw new Error('Không đọc được giao dịch nào. Hãy thử lại.');
-      const results = await Promise.all(entries.map((e) => onSave({ id: newId(), ...e })));
-      const saved = entries.filter((_, i) => results[i]);
-      if (saved.length === 0) throw new Error('Không lưu được giao dịch. Hãy kiểm tra kết nối và thử lại.');
-      // Keep the note when something failed, so the user can retry.
-      if (saved.length === entries.length) setText('');
-      setMessage(
-        `Đã thêm: ${saved.map(describeEntry).join('; ')}` +
-          (offline ? ' (Tự phân loại)' : '') +
-          (saved.length < entries.length ? ` (${entries.length - saved.length} khoản chưa lưu được)` : ''),
-      );
+      // Quick entries go to the wallet used last, like the full form does.
+      const wallet = assets.find((a) => a.id === prefs.lastAccountId && isSpendable(a));
+      const saved = entries.map((e) => ({ id: newId(), ...e, accountId: wallet?.id }));
+      saveTransactions(saved);
+      setText('');
+      toast.show({
+        message:
+          `Đã thêm: ${entries.map((e) => describeEntry(e, categories)).join('; ')}` +
+          (wallet ? ` · ${wallet.name}` : '') +
+          (offline ? ' (tự phân loại, chưa qua AI)' : ''),
+        tone: 'success',
+        actionLabel: 'Hoàn tác',
+        onAction: () => saved.forEach((t) => deleteTransaction(t.id)),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Đã có lỗi xảy ra.');
     } finally {
@@ -70,7 +76,7 @@ export function QuickEntryBar({ onSave }: Props) {
   };
 
   const chooseReceipt = () => {
-    Alert.alert('Quét hoá đơn', 'Chọn ảnh hoá đơn để trích xuất giao dịch.', [
+    Alert.alert('Quét hoá đơn', 'Chọn ảnh hoá đơn để AI đọc số tiền và ngày.', [
       { text: 'Chụp ảnh', onPress: () => pick('camera') },
       { text: 'Chọn từ thư viện', onPress: () => pick('library') },
       { text: 'Huỷ', style: 'cancel' },
@@ -78,61 +84,32 @@ export function QuickEntryBar({ onSave }: Props) {
   };
 
   return (
-    <View style={ui.card}>
+    <Card style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-        <TextInput
-          placeholderTextColor={colors.muted}
-          style={[ui.input, { flex: 1, paddingVertical: 6, fontSize: 13 }]}
+        <Input
+          style={{ flex: 1 }}
           value={text}
           onChangeText={setText}
-          placeholder='Nhập nhanh: "cafe 35k", "ăn trưa 50k", "lương 20tr"...'
+          placeholder='Nhập nhanh: "cafe 35k, xăng 50k"'
           returnKeyType="send"
           onSubmitEditing={submitText}
           editable={!busy}
+          accessibilityLabel="Nhập nhanh giao dịch"
+          accessibilityHint="Ví dụ: cafe 35k. Bấm gửi để ghi."
         />
         {busy ? (
-          <ActivityIndicator color={colors.primary} size="small" style={{ width: 36 }} />
+          <ActivityIndicator color={colors.primary} size="small" style={{ width: 44 }} />
         ) : text.trim() ? (
-          <Pressable
-            onPress={submitText}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 12,
-              paddingVertical: 7,
-              backgroundColor: colors.primary,
-              borderRadius: 4,
-            }}
-            accessibilityLabel="Ghi nhanh"
-          >
-            <Icon name="check" size={13} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Ghi</Text>
-          </Pressable>
+          <IconButton icon="send" label="Ghi nhanh" onPress={submitText} color={colors.primary} filled />
         ) : (
-          <Pressable
-            onPress={chooseReceipt}
-            hitSlop={6}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 10,
-              paddingVertical: 7,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 4,
-              backgroundColor: colors.background,
-            }}
-            accessibilityLabel="Quét hoá đơn"
-          >
-            <Icon name="camera" size={13} color={colors.muted} />
-            <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '600' }}>Hóa đơn</Text>
-          </Pressable>
+          <IconButton icon="camera" label="Quét hoá đơn" onPress={chooseReceipt} color={colors.primary} filled />
         )}
       </View>
-      {message ? <Text style={[ui.label, { color: colors.income }]}>{message}</Text> : null}
-      {error ? <Text style={{ color: colors.expense, fontSize: 12 }}>{error}</Text> : null}
-    </View>
+      {error ? (
+        <Text accessibilityRole="alert" style={{ color: colors.expense, fontSize: font.caption }}>
+          {error}
+        </Text>
+      ) : null}
+    </Card>
   );
 }

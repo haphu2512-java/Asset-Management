@@ -1,102 +1,86 @@
 import type { ReactNode } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, ui } from '../theme';
+import { confirm } from '../confirm';
+import { font, radius, space, useTheme } from '../theme';
 import { Icon, getCategoryIcon, type IconName } from './Icon';
+import { Button, IconButton } from './ui';
 
 type Props = {
   visible: boolean;
   title: string;
   onClose: () => void;
-  onSave: () => void;
+  /** Omit for sheets that only show information. */
+  onSave?: () => void;
+  saveLabel?: string;
   onDelete?: () => void;
+  /** Ask before deleting; leave off when the caller offers an undo instead. */
+  confirmDelete?: string;
+  deleteLabel?: string;
   error?: string;
   children: ReactNode;
 };
 
 /** Bottom sheet used by the add/edit forms. */
-export function Sheet({ visible, title, onClose, onSave, onDelete, error, children }: Props) {
+export function Sheet({
+  visible,
+  title,
+  onClose,
+  onSave,
+  saveLabel = 'Lưu',
+  onDelete,
+  confirmDelete,
+  deleteLabel = 'Xoá',
+  error,
+  children,
+}: Props) {
+  const { colors, ui } = useTheme();
   const insets = useSafeAreaInsets();
   // Ensure enough bottom clearance for system navigation bar (3-button / gesture bar) or notch / home indicator.
-  const bottomInset = Platform.OS === 'android'
-    ? Math.max(insets.bottom, 44)
-    : insets.bottom;
-  const paddingBottom = 16 + bottomInset;
+  const bottomInset = Platform.OS === 'android' ? Math.max(insets.bottom, 44) : insets.bottom;
+
+  const remove = () => {
+    if (!onDelete) return;
+    if (!confirmDelete) return onDelete();
+    confirm({ title: `${deleteLabel}?`, message: confirmDelete, confirmLabel: deleteLabel, destructive: true, onConfirm: onDelete });
+  };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
+        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay }}
       >
+        <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Đóng" accessibilityRole="button" />
         <View
+          accessibilityViewIsModal
           style={{
             backgroundColor: colors.card,
-            borderTopLeftRadius: 8,
-            borderTopRightRadius: 8,
-            borderTopWidth: 1,
-            borderTopColor: colors.border,
-            maxHeight: '90%',
+            borderTopLeftRadius: radius.lg,
+            borderTopRightRadius: radius.lg,
+            maxHeight: '92%',
           }}
         >
+          <View style={[ui.row, { paddingLeft: space.lg, paddingRight: 6, paddingTop: 6 }]}>
+            <Text style={ui.title} accessibilityRole="header">
+              {title}
+            </Text>
+            <IconButton icon="close" label="Đóng" onPress={onClose} />
+          </View>
           <ScrollView
-            contentContainerStyle={{ padding: 16, paddingBottom, gap: 12 }}
+            contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: 16 + bottomInset, gap: space.md }}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={[ui.row, { paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}>
-              <Text style={ui.heading}>{title}</Text>
-              <Pressable
-                onPress={onClose}
-                hitSlop={12}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4,
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 4,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <Icon name="close" size={12} color={colors.muted} />
-                <Text style={{ fontSize: 12, color: colors.muted }}>Đóng</Text>
-              </Pressable>
-            </View>
-
             {children}
 
-            {error ? <Text style={{ color: colors.expense, fontSize: 13 }}>{error}</Text> : null}
-
-            <Pressable
-              style={[ui.button, { flexDirection: 'row', gap: 6, alignItems: 'center' }]}
-              onPress={onSave}
-            >
-              <Icon name="check" size={15} color="#FFFFFF" strokeWidth={2.5} />
-              <Text style={ui.buttonText}>Lưu thay đổi</Text>
-            </Pressable>
-
-            {onDelete ? (
-              <Pressable
-                onPress={() =>
-                  Alert.alert('Xoá mục này?', 'Dữ liệu đã xoá không thể khôi phục.', [
-                    { text: 'Huỷ', style: 'cancel' },
-                    { text: 'Xoá', style: 'destructive', onPress: onDelete },
-                  ])
-                }
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 5,
-                  paddingVertical: 8,
-                  marginTop: -4,
-                }}
-              >
-                <Icon name="trash" size={13} color={colors.expense} />
-                <Text style={{ color: colors.expense, fontSize: 13, fontWeight: '500' }}>Xoá mục này</Text>
-              </Pressable>
+            {error ? (
+              <Text accessibilityRole="alert" style={{ color: colors.expense, fontSize: font.body }}>
+                {error}
+              </Text>
             ) : null}
+
+            {onSave ? <Button label={saveLabel} icon="check" onPress={onSave} /> : null}
+            {onDelete ? <Button label={deleteLabel} icon="trash" variant="danger" onPress={remove} /> : null}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -107,19 +91,23 @@ export function Sheet({ visible, title, onClose, onSave, onDelete, error, childr
 export function Field({
   label,
   icon,
+  hint,
   children,
 }: {
   label: string;
   icon?: IconName;
+  hint?: string;
   children: ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
-    <View style={{ gap: 4 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-        {icon ? <Icon name={icon} size={12} color={colors.muted} /> : null}
-        <Text style={ui.label}>{label}</Text>
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {icon ? <Icon name={icon} size={14} color={colors.muted} /> : null}
+        <Text style={{ fontSize: font.body, fontWeight: '600', color: colors.text }}>{label}</Text>
       </View>
       {children}
+      {hint ? <Text style={{ fontSize: font.caption, color: colors.muted, lineHeight: 17 }}>{hint}</Text> : null}
     </View>
   );
 }
@@ -128,7 +116,8 @@ export type ChipOption = {
   id: string;
   label: string;
   color?: string;
-  icon?: IconName;
+  /** Icon name; `null` shows no icon. Defaults to the icon for the id. */
+  icon?: string | null;
 };
 
 export function Chips({
@@ -142,36 +131,38 @@ export function Chips({
   onChange: (id: string) => void;
   showIcons?: boolean;
 }) {
+  const { colors, ui, tone } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }} accessibilityRole="radiogroup">
       {options.map((o) => {
         const selected = o.id === value;
-        const iconName = o.icon || (showIcons ? getCategoryIcon(o.id) : undefined);
+        const iconName = !showIcons || o.icon === null ? undefined : getCategoryIcon(o.icon ?? o.id);
         return (
           <Pressable
             key={o.id}
             onPress={() => onChange(o.id)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            accessibilityLabel={o.label}
             style={[
               ui.chip,
-              { flexDirection: 'row', alignItems: 'center', gap: 5 },
-              selected
-                ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                : { backgroundColor: '#FFFFFF', borderColor: colors.border },
+              { flexDirection: 'row', alignItems: 'center', gap: 6 },
+              selected && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
           >
             {iconName ? (
               <Icon
                 name={iconName}
-                size={13}
-                color={selected ? '#FFFFFF' : (o.color || colors.muted)}
+                size={15}
+                color={selected ? colors.onPrimary : o.color ? tone(o.color) : colors.muted}
                 strokeWidth={2.2}
               />
             ) : null}
             <Text
               style={{
-                fontSize: 13,
-                fontWeight: selected ? '600' : '400',
-                color: selected ? '#FFFFFF' : colors.text,
+                fontSize: font.body,
+                fontWeight: selected ? '700' : '500',
+                color: selected ? colors.onPrimary : colors.text,
               }}
             >
               {o.label}
@@ -182,4 +173,3 @@ export function Chips({
     </View>
   );
 }
-

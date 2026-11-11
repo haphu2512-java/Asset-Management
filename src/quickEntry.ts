@@ -6,6 +6,7 @@ import {
   quickParse,
   todayKey,
   type QuickEntry,
+  type TransactionCategory,
 } from './finance.ts';
 import { supabase, unauthorizedMessage } from './supabase';
 
@@ -18,11 +19,15 @@ export type QuickEntryResult = {
 };
 
 /** Keeps only well-formed entries whose category matches their kind. */
-export function sanitizeEntries(raw: unknown, today = todayKey()): QuickEntry[] {
+export function sanitizeEntries(
+  raw: unknown,
+  today = todayKey(),
+  categories: TransactionCategory[] = TRANSACTION_CATEGORIES,
+): QuickEntry[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item): QuickEntry[] => {
     const amount = Math.round(Number(item?.amount));
-    const category = TRANSACTION_CATEGORIES.find((c) => c.id === item?.category);
+    const category = categories.find((c) => c.id === item?.category);
     if (!category || !Number.isFinite(amount) || amount <= 0) return [];
     const date = typeof item?.date === 'string' && isValidDateKey(item.date) ? item.date : today;
     const note = typeof item?.note === 'string' ? item.note.trim().slice(0, 200) : '';
@@ -34,19 +39,27 @@ export function sanitizeEntries(raw: unknown, today = todayKey()): QuickEntry[] 
  * Turns "cafe 35k" or a receipt photo into transactions with the `parse-transaction`
  * Edge Function. Text input falls back to the offline parser if the AI is unavailable.
  */
-export async function parseQuickEntry(input: { text?: string; image?: ReceiptImage }): Promise<QuickEntryResult> {
+export async function parseQuickEntry(
+  input: { text?: string; image?: ReceiptImage },
+  categories: TransactionCategory[] = TRANSACTION_CATEGORIES,
+): Promise<QuickEntryResult> {
   const today = todayKey();
+  // The server accepts at most 30 categories; top-level ones go first so they are never cut.
+  const offered = categories
+    .filter((c) => !c.hidden)
+    .sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId))
+    .slice(0, 30);
   const { data, error } = await supabase.functions.invoke('parse-transaction', {
     body: {
       text: input.text ?? '',
       image: input.image,
       today,
-      categories: TRANSACTION_CATEGORIES.map(({ id, label, kind }) => ({ id, label, kind })),
+      categories: offered.map(({ id, label, kind }) => ({ id, label, kind })),
     },
   });
 
   if (!error) {
-    const entries = sanitizeEntries(data?.transactions, today);
+    const entries = sanitizeEntries(data?.transactions, today, offered);
     if (entries.length > 0 || input.image) return { entries, offline: false };
   }
 
@@ -68,8 +81,8 @@ export async function parseQuickEntry(input: { text?: string; image?: ReceiptIma
   );
 }
 
-export function describeEntry(entry: QuickEntry): string {
-  const label = getTransactionCategory(entry.category).label;
+export function describeEntry(entry: QuickEntry, categories?: TransactionCategory[]): string {
+  const label = getTransactionCategory(entry.category, categories).label;
   const sign = entry.kind === 'income' ? '+' : '-';
   return `${entry.note || label} (${label}) ${sign}${formatVnd(entry.amount)}`;
 }

@@ -1,414 +1,300 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import {
   addMonths,
   formatDigits,
-  formatVnd,
+  frequencyUnit,
   GOAL_CATEGORIES,
-  isValidDateKey,
-  parseVnd,
+  parseVndExpression,
   type Goal,
   type GoalCategoryId,
   type GoalFrequency,
   type GoalType,
 } from '../finance';
-import { newId } from '../store';
-import { colors, ui } from '../theme';
-import { Icon, type IconName } from './Icon';
+import { newId, useStore } from '../store';
+import { font, radius, useMoney, useTheme } from '../theme';
+import { accountOptions } from './accounts';
+import { DateField } from './DateField';
+import { Icon } from './Icon';
 import { Chips, Field, Sheet, type ChipOption } from './Sheet';
+import { useToast } from './Toast';
+import { AmountInput, Input, Segmented } from './ui';
 
 type Props = {
   visible: boolean;
   goal: Goal | null;
   onClose: () => void;
-  onSave: (goal: Goal) => void;
-  onDelete: (id: string) => void;
 };
 
-const GOAL_TYPES: ChipOption[] = [
-  { id: 'recurring', label: 'Tích lũy định kỳ (DCA)', icon: 'refresh', color: colors.primary },
-  { id: 'target_amount', label: 'Số tiền mục tiêu', icon: 'goals', color: colors.primary },
+const GOAL_TYPES: { id: GoalType; label: string }[] = [
+  { id: 'recurring', label: 'Góp định kỳ' },
+  { id: 'target_amount', label: 'Số tiền mục tiêu' },
 ];
 
 const FREQUENCIES: ChipOption[] = [
-  { id: 'monthly', label: 'Hàng tháng' },
-  { id: 'weekly', label: 'Hàng tuần' },
-  { id: 'quarterly', label: 'Hàng quý' },
+  { id: 'monthly', label: 'Hàng tháng', icon: null },
+  { id: 'weekly', label: 'Hàng tuần', icon: null },
+  { id: 'quarterly', label: 'Hàng quý', icon: null },
 ];
 
-const RECURRING_PRESETS = ['200k', '400k', '500k', '1tr', '2tr', '5tr'];
+const RECURRING_PRESETS = ['200k', '500k', '1tr', '2tr', '5tr'];
 const TARGET_PRESETS = ['20tr', '50tr', '100tr', '200tr', '500tr'];
 
 const DURATIONS: ChipOption[] = [
-  { id: '6', label: '6 tháng' },
-  { id: '12', label: '1 năm' },
-  { id: '24', label: '2 năm' },
-  { id: '36', label: '3 năm' },
-  { id: '60', label: '5 năm' },
+  { id: '6', label: '6 tháng', icon: null },
+  { id: '12', label: '1 năm', icon: null },
+  { id: '24', label: '2 năm', icon: null },
+  { id: '36', label: '3 năm', icon: null },
+  { id: '60', label: '5 năm', icon: null },
 ];
 
-const CATEGORY_OPTIONS: ChipOption[] = GOAL_CATEGORIES.map((c) => ({
-  id: c.id,
-  label: c.label,
-  color: c.color,
-  icon: c.icon as IconName,
-}));
+const CATEGORY_OPTIONS: ChipOption[] = GOAL_CATEGORIES.map((c) => ({ id: c.id, label: c.label, color: c.color, icon: c.icon }));
 
-export function GoalForm({ visible, goal, onClose, onSave, onDelete }: Props) {
+const PLACEHOLDER: Record<string, string> = {
+  etf: 'Ví dụ: Quỹ ETF VN30, Tích sản cổ phiếu',
+  saving: 'Ví dụ: Sổ tiết kiệm 12 tháng',
+  emergency: 'Ví dụ: Quỹ dự phòng 6 tháng chi tiêu',
+  housing: 'Ví dụ: Mua nhà, Mua xe',
+  shopping: 'Ví dụ: Đổi điện thoại',
+  education: 'Ví dụ: Du lịch Nhật Bản, Học tiếng Anh',
+};
+
+/** How many contributions fit in a number of months. */
+function periodsIn(months: number, frequency: GoalFrequency): number {
+  if (frequency === 'weekly') return Math.round(months * (52 / 12));
+  if (frequency === 'quarterly') return Math.max(1, Math.round(months / 3));
+  return months;
+}
+
+export function GoalForm({ visible, goal, onClose }: Props) {
+  const { colors } = useTheme();
+  const { assets, saveGoal, deleteGoal } = useStore();
+  const toast = useToast();
+  const format = useMoney();
+
   const [goalType, setGoalType] = useState<GoalType>('recurring');
-  const [category, setCategory] = useState<GoalCategoryId>('etf');
+  const [category, setCategory] = useState<GoalCategoryId>('saving');
   const [name, setName] = useState('');
-  const [recurringAmount, setRecurringAmount] = useState('400k');
+  const [recurringAmount, setRecurringAmount] = useState('');
   const [frequency, setFrequency] = useState<GoalFrequency>('monthly');
   const [durationMonths, setDurationMonths] = useState(12);
   const [target, setTarget] = useState('');
-  const [customTargetActive, setCustomTargetActive] = useState(false);
+  /** Once the user types a target for a recurring plan it stops following amount × periods. */
+  const [customTarget, setCustomTarget] = useState(false);
   const [saved, setSaved] = useState('');
   const [deadline, setDeadline] = useState(addMonths(12));
+  const [assetId, setAssetId] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!visible) return;
-    if (goal) {
-      setGoalType(goal.type ?? (goal.recurringAmount ? 'recurring' : 'target_amount'));
-      setCategory(goal.category ?? 'etf');
-      setName(goal.name);
-      setRecurringAmount(goal.recurringAmount ? formatDigits(goal.recurringAmount) : '400k');
-      setFrequency(goal.frequency ?? 'monthly');
-      setTarget(formatDigits(goal.target));
-      setSaved(goal.saved ? formatDigits(goal.saved) : '');
-      setDeadline(goal.deadline);
-      setCustomTargetActive(true);
-    } else {
-      setGoalType('recurring');
-      setCategory('etf');
-      setName('');
-      setRecurringAmount('400k');
-      setFrequency('monthly');
-      setDurationMonths(12);
-      setSaved('');
-      setDeadline(addMonths(12));
-      setCustomTargetActive(false);
-      // Auto-compute target: 400k * 12 = 4.8tr
-      setTarget(formatDigits(400_000 * 12));
-    }
+    setGoalType(goal?.type ?? 'recurring');
+    setCategory(goal?.category ?? 'saving');
+    setName(goal?.name ?? '');
+    setRecurringAmount(goal?.recurringAmount ? formatDigits(goal.recurringAmount) : '');
+    setFrequency(goal?.frequency ?? 'monthly');
+    setDurationMonths(goal ? 0 : 12);
+    setTarget(goal ? formatDigits(goal.target) : '');
+    setCustomTarget(!!goal);
+    setSaved(goal?.saved ? formatDigits(goal.saved) : '');
+    setDeadline(goal?.deadline ?? addMonths(12));
+    setAssetId(goal?.assetId ?? '');
     setError('');
   }, [visible, goal]);
 
-  // When recurring parameters change, auto-update target if user hasn't overridden it
-  const updateRecurringEstimate = (amountStr: string, months: number, freq: GoalFrequency) => {
-    const val = parseVnd(amountStr);
-    if (!val) return;
-    // Estimate total periods
-    let periods = months;
-    if (freq === 'weekly') periods = Math.round(months * 4.33);
-    else if (freq === 'quarterly') periods = Math.max(1, Math.round(months / 3));
-
-    const computed = val * periods;
-    if (!customTargetActive || !target) {
-      setTarget(formatDigits(computed));
-    }
+  const plannedTotal = (amountText: string, months: number, freq: GoalFrequency): number | null => {
+    const value = parseVndExpression(amountText);
+    return value && months > 0 ? value * periodsIn(months, freq) : null;
   };
 
-  const handleRecurringAmountChange = (text: string) => {
-    setRecurringAmount(text);
-    updateRecurringEstimate(text, durationMonths, frequency);
+  /** Keeps the target of a recurring plan equal to amount × periods until the user overrides it. */
+  const follow = (amountText: string, months: number, freq: GoalFrequency) => {
+    const total = plannedTotal(amountText, months, freq);
+    if (!customTarget && total) setTarget(formatDigits(total));
   };
 
-  const handleDurationChange = (monthsStr: string) => {
-    const months = Number(monthsStr);
+  const changeDuration = (id: string) => {
+    const months = Number(id);
     setDurationMonths(months);
     setDeadline(addMonths(months));
-    updateRecurringEstimate(recurringAmount, months, frequency);
-  };
-
-  const handleFrequencyChange = (id: string) => {
-    const freq = id as GoalFrequency;
-    setFrequency(freq);
-    updateRecurringEstimate(recurringAmount, durationMonths, freq);
-  };
-
-  const getDynamicPlaceholder = () => {
-    switch (category) {
-      case 'etf':
-        return 'Ví dụ: Quỹ ETF VN30, Quỹ ETF Diamond, Tích sản cổ phiếu...';
-      case 'saving':
-        return 'Ví dụ: Sổ tiết kiệm 12 tháng, Tiết kiệm sinh lời...';
-      case 'emergency':
-        return 'Ví dụ: Quỹ dự phòng khẩn cấp 6 tháng chi tiêu...';
-      case 'housing':
-        return 'Ví dụ: Mua nhà, Mua xe ô tô...';
-      case 'shopping':
-        return 'Ví dụ: Mua MacBook Pro, Đổi điện thoại...';
-      case 'education':
-        return 'Ví dụ: Học tiếng Anh, Du lịch Nhật Bản...';
-      default:
-        return 'Ví dụ: Kế hoạch tài chính 2027...';
-    }
+    follow(recurringAmount, months, frequency);
   };
 
   const save = () => {
-    if (!name.trim()) {
-      return setError('Hãy đặt tên cho mục tiêu, ví dụ: "Quỹ ETF VN30".');
-    }
-
-    let parsedRecurring: number | undefined;
+    if (!name.trim()) return setError('Hãy đặt tên cho mục tiêu, ví dụ "Quỹ dự phòng".');
+    let planned: number | undefined;
     if (goalType === 'recurring') {
-      const rec = parseVnd(recurringAmount);
-      if (!rec || rec <= 0) {
-        return setError('Hãy nhập số tiền góp mỗi kỳ hợp lệ. Ví dụ: 400k.');
-      }
-      parsedRecurring = rec;
+      const value = parseVndExpression(recurringAmount);
+      if (!value) return setError('Nhập số tiền góp mỗi kỳ, ví dụ 500k.');
+      planned = value;
     }
-
-    const targetValue = parseVnd(target);
-    if (!targetValue || targetValue <= 0) {
-      return setError('Số tiền mục tiêu không hợp lệ. Ví dụ: 4.8tr hoặc 100tr.');
-    }
-
-    const savedValue = saved.trim() ? parseVnd(saved) : 0;
+    const targetValue = parseVndExpression(target);
+    if (!targetValue) return setError('Số tiền mục tiêu không hợp lệ. Ví dụ: 100tr.');
+    const savedValue = saved.trim() ? parseVndExpression(saved) : 0;
     if (savedValue === null) return setError('Số tiền đã có không hợp lệ.');
 
-    if (!isValidDateKey(deadline)) {
-      return setError('Hạn phải có dạng NNNN-TT-NN, ví dụ 2027-10-25.');
-    }
-
-    onSave({
+    saveGoal({
       id: goal?.id ?? newId(),
       name: name.trim(),
       type: goalType,
       category,
-      recurringAmount: parsedRecurring,
+      recurringAmount: planned,
       frequency,
       target: targetValue,
       saved: savedValue,
       deadline,
       lastContributedAt: goal?.lastContributedAt,
       contributionsCount: goal?.contributionsCount,
+      assetId: assetId || undefined,
     });
     onClose();
+    toast.show({ message: goal ? 'Đã cập nhật mục tiêu.' : 'Đã thêm mục tiêu.', tone: 'success' });
   };
 
-  const parsedRec = parseVnd(recurringAmount);
-  const parsedTgt = parseVnd(target);
+  const remove = () => {
+    if (!goal) return;
+    deleteGoal(goal.id);
+    onClose();
+    toast.show({ message: `Đã xoá mục tiêu ${goal.name}.` });
+  };
+
+  const unit = frequencyUnit(frequency);
+  const planned = parseVndExpression(recurringAmount);
+  const total = parseVndExpression(target);
+
+  const presets = (values: string[], current: string, pick: (v: string) => void) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+      {values.map((p) => {
+        const selected = current === p;
+        return (
+          <Pressable
+            key={p}
+            onPress={() => pick(p)}
+            accessibilityRole="button"
+            accessibilityLabel={`Chọn ${p}`}
+            hitSlop={4}
+            style={{
+              paddingHorizontal: 12,
+              minHeight: 36,
+              justifyContent: 'center',
+              borderRadius: radius.sm,
+              borderWidth: 1,
+              borderColor: selected ? colors.primary : colors.border,
+              backgroundColor: selected ? colors.primaryLight : colors.card,
+            }}
+          >
+            <Text style={{ fontSize: font.body, fontWeight: '600', color: selected ? colors.primary : colors.text }}>{p}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
   return (
     <Sheet
       visible={visible}
-      title={goal ? 'Sửa mục tiêu' : 'Thêm mục tiêu tài chính'}
+      title={goal ? 'Sửa mục tiêu' : 'Thêm mục tiêu'}
       onClose={onClose}
       onSave={save}
-      onDelete={goal ? () => (onDelete(goal.id), onClose()) : undefined}
+      onDelete={goal ? remove : undefined}
+      confirmDelete={goal ? 'Mục tiêu và lịch sử góp của nó sẽ bị xoá. Tiền trong các tài khoản không thay đổi.' : undefined}
       error={error}
     >
-      {/* 1. Kiểu mục tiêu */}
-      <Field label="Hình thức mục tiêu" icon="goals">
-        <Chips
-          options={GOAL_TYPES}
-          value={goalType}
-          onChange={(id) => {
-            const nextType = id as GoalType;
-            setGoalType(nextType);
-            if (nextType === 'recurring') {
-              updateRecurringEstimate(recurringAmount, durationMonths, frequency);
-            }
-          }}
-          showIcons={true}
-        />
+      <Segmented
+        options={GOAL_TYPES}
+        value={goalType}
+        onChange={(next) => {
+          setGoalType(next);
+          if (next === 'recurring') follow(recurringAmount, durationMonths, frequency);
+        }}
+      />
+
+      <Field label="Phân loại">
+        <Chips options={CATEGORY_OPTIONS} value={category} onChange={(id) => setCategory(id as GoalCategoryId)} />
       </Field>
 
-      {/* 2. Danh mục mục tiêu */}
-      <Field label="Phân loại" icon="pie-chart">
-        <Chips
-          options={CATEGORY_OPTIONS}
-          value={category}
-          onChange={(id) => setCategory(id as GoalCategoryId)}
-          showIcons={true}
-        />
+      <Field label="Tên mục tiêu">
+        <Input value={name} onChangeText={setName} placeholder={PLACEHOLDER[category] ?? 'Ví dụ: Kế hoạch tài chính 2027'} accessibilityLabel="Tên mục tiêu" />
       </Field>
 
-      {/* 3. Tên mục tiêu */}
-      <Field label="Tên mục tiêu" icon="edit">
-        <TextInput
-          placeholderTextColor={colors.muted}
-          style={ui.input}
-          value={name}
-          onChangeText={setName}
-          placeholder={getDynamicPlaceholder()}
-        />
-      </Field>
-
-      {/* 4. Cấu hình theo hình thức */}
       {goalType === 'recurring' ? (
         <>
-          {/* Số tiền góp mỗi kỳ */}
-          <Field
-            label={`Số tiền góp mỗi ${frequency === 'weekly' ? 'tuần' : frequency === 'quarterly' ? 'quý' : 'tháng'} (VND)`}
-            icon="wallet"
-          >
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-              {RECURRING_PRESETS.map((p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => handleRecurringAmountChange(p)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: 4,
-                    borderWidth: 1,
-                    borderColor: recurringAmount === p ? colors.primary : colors.border,
-                    backgroundColor: recurringAmount === p ? colors.primaryLight : '#FFFFFF',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: '600',
-                      color: recurringAmount === p ? colors.primary : colors.text,
-                    }}
-                  >
-                    {p}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={ui.input}
-              value={recurringAmount}
-              onChangeText={handleRecurringAmountChange}
-              placeholder="Ví dụ: 400k, 500k hoặc 1tr"
-              autoCapitalize="none"
-            />
-          </Field>
-
-          {/* Chu kỳ */}
-          <Field label="Chu kỳ đóng góp" icon="clock">
+          <Field label="Chu kỳ góp">
             <Chips
               options={FREQUENCIES}
               value={frequency}
-              onChange={handleFrequencyChange}
-              showIcons={false}
-            />
-          </Field>
-
-          {/* Thời hạn dự kiến */}
-          <Field label="Thời gian tích lũy dự kiến" icon="calendar">
-            <Chips
-              options={DURATIONS}
-              value={String(durationMonths)}
-              onChange={handleDurationChange}
-              showIcons={false}
-            />
-          </Field>
-
-          {/* Tóm tắt ước tính */}
-          {parsedRec ? (
-            <View
-              style={{
-                padding: 12,
-                backgroundColor: colors.background,
-                borderRadius: 6,
-                borderWidth: 1,
-                borderColor: colors.borderSubtle,
-                gap: 4,
+              onChange={(id) => {
+                setFrequency(id as GoalFrequency);
+                follow(recurringAmount, durationMonths, id as GoalFrequency);
               }}
+              showIcons={false}
+            />
+          </Field>
+          <Field label={`Số tiền góp mỗi ${unit} (VND)`}>
+            {presets(RECURRING_PRESETS, recurringAmount, (p) => {
+              setRecurringAmount(p);
+              follow(p, durationMonths, frequency);
+            })}
+            <AmountInput
+              value={recurringAmount}
+              onChangeText={(text) => {
+                setRecurringAmount(text);
+                follow(text, durationMonths, frequency);
+              }}
+              placeholder="Ví dụ: 500k"
+            />
+          </Field>
+          <Field label="Thời gian tích luỹ">
+            <Chips options={DURATIONS} value={String(durationMonths)} onChange={changeDuration} showIcons={false} />
+            <DateField value={deadline} onChange={(d) => (setDeadline(d), setDurationMonths(0))} accessibilityLabel="Hạn hoàn thành" />
+          </Field>
+          {planned && total ? (
+            <View
+              style={{ padding: 12, backgroundColor: colors.primaryLight, borderRadius: radius.sm, flexDirection: 'row', gap: 8 }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="sparkles" size={14} color={colors.primary} />
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
-                  Dự kiến tích lũy: {formatVnd(parsedTgt || parsedRec * durationMonths)}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 12, color: colors.muted, lineHeight: 18 }}>
-                Góp đều đặn {formatVnd(parsedRec)}/{frequency === 'weekly' ? 'tuần' : frequency === 'quarterly' ? 'quý' : 'tháng'} trong {durationMonths} tháng (hạn: {deadline}).
+              <Icon name="sparkles" size={16} color={colors.primary} />
+              <Text style={{ flex: 1, fontSize: font.body, color: colors.primary, lineHeight: 20 }}>
+                Góp {format(planned)} mỗi {unit} để tích luỹ {format(total)}.
               </Text>
             </View>
           ) : null}
-
-          {/* Tuỳ chỉnh mốc tổng tiền nếu muốn */}
-          <Field label="Mục tiêu tổng số tiền (VND)" icon="trending-up">
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={ui.input}
+          <Field label="Tổng số tiền mục tiêu (VND)" hint="Tự tính từ số tiền góp và thời gian; sửa nếu bạn có mốc riêng.">
+            <AmountInput
               value={target}
               onChangeText={(t) => {
                 setTarget(t);
-                setCustomTargetActive(true);
+                setCustomTarget(true);
               }}
-              placeholder="Tự động tính hoặc nhập mốc riêng (vd: 50tr)"
-              autoCapitalize="none"
+              placeholder="Ví dụ: 50tr"
+              accessibilityLabel="Tổng số tiền mục tiêu"
             />
           </Field>
         </>
       ) : (
         <>
-          {/* Target Amount Mode */}
-          <Field label="Số tiền cần có (VND)" icon="wallet">
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-              {TARGET_PRESETS.map((p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => setTarget(p)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: 4,
-                    borderWidth: 1,
-                    borderColor: target === p ? colors.primary : colors.border,
-                    backgroundColor: target === p ? colors.primaryLight : '#FFFFFF',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: '600',
-                      color: target === p ? colors.primary : colors.text,
-                    }}
-                  >
-                    {p}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={ui.input}
-              value={target}
-              onChangeText={setTarget}
-              placeholder="Ví dụ: 100tr"
-              autoCapitalize="none"
-            />
+          <Field label="Số tiền cần có (VND)">
+            {presets(TARGET_PRESETS, target, setTarget)}
+            <AmountInput value={target} onChangeText={setTarget} placeholder="Ví dụ: 100tr" />
           </Field>
-
-          {/* Hạn hoàn thành */}
-          <Field label="Hạn hoàn thành (NNNN-TT-NN)" icon="calendar">
-            <Chips
-              options={DURATIONS}
-              value={String(durationMonths)}
-              onChange={handleDurationChange}
-              showIcons={false}
-            />
-            <TextInput
-              placeholderTextColor={colors.muted}
-              style={ui.input}
-              value={deadline}
-              onChangeText={setDeadline}
-              autoCapitalize="none"
-            />
+          <Field label="Hạn hoàn thành">
+            <Chips options={DURATIONS} value={String(durationMonths)} onChange={changeDuration} showIcons={false} />
+            <DateField value={deadline} onChange={(d) => (setDeadline(d), setDurationMonths(0))} accessibilityLabel="Hạn hoàn thành" />
           </Field>
         </>
       )}
 
-      {/* Đã để dành được */}
-      <Field label="Đã có sẵn (nếu có, VND)" icon="saving">
-        <TextInput
-          placeholderTextColor={colors.muted}
-          style={ui.input}
-          value={saved}
-          onChangeText={setSaved}
-          placeholder="0"
-          autoCapitalize="none"
+      <Field label="Đã có sẵn (VND, tuỳ chọn)">
+        <AmountInput value={saved} onChangeText={setSaved} placeholder="0" accessibilityLabel="Số tiền đã có" />
+      </Field>
+
+      <Field
+        label="Tiền của mục tiêu nằm ở đâu (tuỳ chọn)"
+        hint="Chọn tài khoản giữ khoản này, ví dụ sổ tiết kiệm. Khi góp từ một ví, tiền sẽ được chuyển sang tài khoản đó."
+      >
+        <Chips
+          options={[...accountOptions(assets.filter((a) => a.category !== 'debt' && a.category !== 'lent'), assetId), { id: '', label: 'Chưa gắn', icon: null }]}
+          value={assetId}
+          onChange={setAssetId}
         />
       </Field>
     </Sheet>

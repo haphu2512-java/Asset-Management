@@ -1,27 +1,45 @@
+import { budgetStatuses, type Budget } from './budgets';
 import {
   formatMonth,
   formatVnd,
+  getGoalCategory,
+  getTransactionCategory,
+  goalProgress,
+  isSpendable,
   monthKey,
   shiftMonth,
   summarize,
   summarizeMonth,
   todayKey,
-  getTransactionCategory,
-  getGoalCategory,
-  goalProgress,
   type Asset,
   type Goal,
   type Transaction,
+  type TransactionCategory,
 } from './finance';
+import { monthlyAmount, type Recurring } from './recurring';
 import { supabase, unauthorizedMessage } from './supabase';
 
+/** Everything the advisor may look at. */
+export type AdvisorData = {
+  assets: Asset[];
+  transactions: Transaction[];
+  goals: Goal[];
+  categories: TransactionCategory[];
+  budgets?: Budget[];
+  recurring?: Recurring[];
+};
+
+export type ChatMessage = { role: 'user' | 'model'; text: string };
+
+export type AdviceReply = {
+  text: string;
+  /** Daily AI request limit, when the server reports it. */
+  limit?: number;
+};
+
 /** Builds a compact plain-text snapshot of the user's finances for the model. */
-export function buildFinanceSnapshot(
-  assets: Asset[],
-  transactions: Transaction[],
-  goals: Goal[] = [],
-  now = new Date(),
-): string {
+export function buildFinanceSnapshot(data: AdvisorData, now = new Date()): string {
+  const { assets, transactions, goals, categories, budgets = [], recurring = [] } = data;
   const lines: string[] = [];
   const s = summarize(assets);
   lines.push('TÀI SẢN');
@@ -31,11 +49,13 @@ export function buildFinanceSnapshot(
   lines.push(`Tổng tài sản: ${formatVnd(s.totalAssets)}`);
   lines.push(`Tổng nợ: ${formatVnd(s.totalDebt)}`);
   lines.push(`Tài sản ròng: ${formatVnd(s.netWorth)}`);
+  const liquid = assets.filter((a) => isSpendable(a) && a.category !== 'debt').reduce((sum, a) => sum + a.amount, 0);
+  lines.push(`Tiền có thể tiêu ngay (tiền mặt, ngân hàng): ${formatVnd(liquid)}`);
 
   const current = monthKey(now);
-  lines.push('', 'THU CHI 3 THÁNG GẦN NHẤT');
+  lines.push('', 'THU CHI 3 THÁNG GẦN NHẤT (không tính chuyển khoản giữa các ví)');
   for (let i = 2; i >= 0; i--) {
-    const m = summarizeMonth(transactions, shiftMonth(current, -i));
+    const m = summarizeMonth(transactions, shiftMonth(current, -i), categories);
     lines.push(
       `${formatMonth(m.month)}: thu ${formatVnd(m.income)}, chi ${formatVnd(m.expense)}, còn lại ${formatVnd(m.balance)}`,
     );
@@ -44,8 +64,28 @@ export function buildFinanceSnapshot(
     }
   }
 
+  const statuses = budgetStatuses(budgets, summarizeMonth(transactions, current, categories), categories);
+  if (statuses.length > 0) {
+    lines.push('', `NGÂN SÁCH ${formatMonth(current).toUpperCase()}`);
+    for (const b of statuses) {
+      lines.push(
+        `- ${b.category.label}: đã chi ${formatVnd(b.spent)}/${formatVnd(b.budget.amount)}` +
+          (b.level === 'over' ? ' (vượt)' : b.level === 'warn' ? ' (sắp hết)' : ''),
+      );
+    }
+  }
+
+  const active = recurring.filter((r) => r.active && r.kind !== 'transfer');
+  if (active.length > 0) {
+    lines.push('', 'KHOẢN ĐỊNH KỲ (quy ra mỗi tháng)');
+    for (const r of active) {
+      const sign = r.kind === 'income' ? '+' : '-';
+      lines.push(`- ${r.note || getTransactionCategory(r.category, categories).label}: ${sign}${formatVnd(monthlyAmount(r))}`);
+    }
+  }
+
   const recent = transactions
-    .filter((t) => monthKey(t.date) === current)
+    .filter((t) => t.kind !== 'transfer' && monthKey(t.date) === current)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 50);
   if (recent.length > 0) {
@@ -53,9 +93,10 @@ export function buildFinanceSnapshot(
     for (const t of recent) {
       const sign = t.kind === 'income' ? '+' : '-';
       const note = t.note ? ` (${t.note})` : '';
-      lines.push(`${t.date} ${sign}${formatVnd(t.amount)} ${getTransactionCategory(t.category).label}${note}`);
+      lines.push(`${t.date} ${sign}${formatVnd(t.amount)} ${getTransactionCategory(t.category, categories).label}${note}`);
     }
   }
+
   if (goals.length > 0) {
     lines.push('', 'MỤC TIÊU TÀI CHÍNH');
     for (const g of goals) {
@@ -64,7 +105,7 @@ export function buildFinanceSnapshot(
       if (g.type === 'recurring') {
         lines.push(
           `- [Định kỳ: ${cat.label}] ${g.name}: đã góp ${formatVnd(g.saved)}/${formatVnd(g.target)}, ` +
-            `định kỳ ${formatVnd(g.recurringAmount || p.monthlyNeeded)}/tháng (${p.contributedThisPeriod ? 'kỳ này đã góp' : 'kỳ này chưa góp'})`,
+            `kế hoạch ${formatVnd(p.periodAmount)}/${p.periodUnit} (${p.contributedThisPeriod ? 'kỳ này đã góp' : 'kỳ này chưa góp'})`,
         );
       } else {
         lines.push(
@@ -77,36 +118,42 @@ export function buildFinanceSnapshot(
   return lines.join('\n');
 }
 
-/** Asks the `advisor` Edge Function (which holds the Gemini key) for advice. */
-export async function getFinancialAdvice(
-  assets: Asset[],
-  transactions: Transaction[],
-  question?: string,
-  goals: Goal[] = [],
-): Promise<string> {
-  const { data, error } = await supabase.functions.invoke('advisor', {
+/**
+ * Asks the `advisor` Edge Function (which holds the Gemini key) for advice.
+ * `history` is the conversation so far, so follow-up questions keep their context.
+ */
+export async function askAdvisor(data: AdvisorData, question = '', history: ChatMessage[] = []): Promise<AdviceReply> {
+  const { data: body, error } = await supabase.functions.invoke('advisor', {
     body: {
-      snapshot: buildFinanceSnapshot(assets, transactions, goals),
-      question: question?.trim() ?? '',
+      snapshot: buildFinanceSnapshot(data),
+      question: question.trim(),
       date: todayKey(),
+      history: history.slice(-12),
     },
   });
 
   if (error) {
     const res = (error as { context?: Response }).context;
-    const body = res ? await res.json().catch(() => null) : null;
+    const detail = res ? await res.json().catch(() => null) : null;
     if (res?.status === 429) {
-      throw new Error(body?.error ?? 'Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
+      throw new Error(detail?.error ?? 'Đang gửi quá nhiều yêu cầu. Hãy thử lại sau ít phút.');
     }
     if (res?.status === 401) {
-      throw new Error(unauthorizedMessage(body));
+      throw new Error(unauthorizedMessage(detail));
     }
-    throw new Error(body?.error ? `Lỗi AI: ${body.error}` : 'Không kết nối được cố vấn AI. Hãy thử lại.');
+    if (!res) throw new Error('Không có mạng. Cố vấn AI cần kết nối Internet.');
+    throw new Error(detail?.error ? `Lỗi AI: ${detail.error}` : 'Không kết nối được cố vấn AI. Hãy thử lại.');
   }
 
-  const text = typeof data?.text === 'string' ? data.text.trim() : '';
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
   if (!text) throw new Error('AI không trả về nội dung. Hãy thử lại.');
-  return text;
+  return { text, limit: typeof body?.limit === 'number' ? body.limit : undefined };
+}
+
+/** AI requests the user has made today, or null when the server cannot say. */
+export async function aiUsageToday(): Promise<number | null> {
+  const { data, error } = await supabase.rpc('ai_usage_today');
+  return error || typeof data !== 'number' ? null : data;
 }
 
 /** Maps errors to a short Vietnamese message for the UI. */
@@ -114,25 +161,16 @@ export function describeAdviceError(error: unknown): string {
   return error instanceof Error ? error.message : 'Đã có lỗi xảy ra.';
 }
 
-/** Asks the advisor how to reach one savings goal, given the user's current cash flow. */
-export function getGoalAdvice(
-  goal: Goal,
-  assets: Asset[],
-  transactions: Transaction[],
-  goals: Goal[],
-): Promise<string> {
+/** The question sent to the advisor about one savings goal. */
+export function goalQuestion(goal: Goal): string {
   const p = goalProgress(goal);
-  const isRecurring = goal.type === 'recurring';
   const category = getGoalCategory(goal.category);
-  const question = isRecurring
-    ? `Tôi có kế hoạch tích lũy định kỳ "${goal.name.slice(0, 80)}" (loại: ${category.label}): ` +
-      `góp ${formatVnd(goal.recurringAmount || p.monthlyNeeded)}/tháng, mục tiêu tích lũy ${formatVnd(goal.target)}. ` +
-      `Hiện đã tích lũy được ${formatVnd(goal.saved)}. ` +
-      `Với dòng tiền thu chi hiện tại, kế hoạch góp định kỳ này có phù hợp không? ` +
-      `Làm sao để duy trì kỷ luật đóng góp đều đặn hàng tháng và tối ưu hóa việc đầu tư này? Trả lời ngắn gọn, thực tế.`
-    : `Tôi muốn đạt mục tiêu "${goal.name.slice(0, 80)}" (loại: ${category.label}): ${formatVnd(goal.target)} trước ngày ${goal.deadline}, ` +
-      `hiện đã có ${formatVnd(goal.saved)}. Theo tính toán cần để dành ${formatVnd(p.monthlyNeeded)}/tháng. ` +
-      `Với thu chi hiện tại, mục tiêu này có khả thi không? Mỗi tháng tôi nên để dành bao nhiêu, ` +
-      `cắt giảm khoản chi nào, và nên giữ khoản tiết kiệm ở đâu? Trả lời ngắn gọn.`;
-  return getFinancialAdvice(assets, transactions, question, goals);
+  const name = goal.name.slice(0, 80);
+  return goal.type === 'recurring'
+    ? `Tôi có kế hoạch tích lũy định kỳ "${name}" (${category.label}): góp ${formatVnd(p.periodAmount)} mỗi ${p.periodUnit}, ` +
+        `mục tiêu ${formatVnd(goal.target)}, đã tích lũy ${formatVnd(goal.saved)}. ` +
+        `Với thu chi hiện tại, kế hoạch này có phù hợp không và làm sao để duy trì đều đặn?`
+    : `Tôi muốn đạt mục tiêu "${name}" (${category.label}): ${formatVnd(goal.target)} trước ngày ${goal.deadline}, ` +
+        `hiện đã có ${formatVnd(goal.saved)}, cần để dành khoảng ${formatVnd(p.monthlyNeeded)} mỗi tháng. ` +
+        `Mục tiêu này có khả thi không, nên cắt giảm khoản chi nào và giữ tiền ở đâu?`;
 }
