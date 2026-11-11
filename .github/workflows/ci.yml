@@ -144,7 +144,7 @@ jobs:
 
       - name: Setup Expo & EAS
         if: steps.decide.outputs.run == 'true'
-        uses: expo/expo-github-action@v8
+        uses: expo/expo-github-action@v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
