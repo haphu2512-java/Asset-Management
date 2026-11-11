@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { confirm } from '../confirm';
 import { font, radius, space, useTheme } from '../theme';
 import { Icon, getCategoryIcon, type IconName } from './Icon';
+import { KeyboardAwareScrollView } from './Keyboard';
 import { Button, IconButton } from './ui';
 
 type Props = {
@@ -47,10 +48,7 @@ export function Sheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay }}
-      >
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Đóng" accessibilityRole="button" />
         <View
           accessibilityViewIsModal
@@ -67,9 +65,8 @@ export function Sheet({
             </Text>
             <IconButton icon="close" label="Đóng" onPress={onClose} />
           </View>
-          <ScrollView
+          <KeyboardAwareScrollView
             contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: 16 + bottomInset, gap: space.md }}
-            keyboardShouldPersistTaps="handled"
           >
             {children}
 
@@ -81,9 +78,9 @@ export function Sheet({
 
             {onSave ? <Button label={saveLabel} icon="check" onPress={onSave} /> : null}
             {onDelete ? <Button label={deleteLabel} icon="trash" variant="danger" onPress={remove} /> : null}
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

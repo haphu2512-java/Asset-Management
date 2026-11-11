@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingBox } from '../components/Keyboard';
 import { aiUsageToday, askAdvisor, describeAdviceError, type ChatMessage } from '../advisor';
 import { Markdown } from '../components/Markdown';
 import { Banner, Button, IconButton, Input } from '../components/ui';
@@ -97,12 +98,13 @@ export function AdvisorScreen({ question: initialQuestion }: { question?: string
   const canRetry = !!error && last?.role === 'user';
 
   return (
-    <KeyboardAvoidingView style={ui.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingBox style={ui.screen}>
       <ScrollView
         ref={scroll}
         contentContainerStyle={[ui.content, { paddingBottom: space.lg }]}
         keyboardShouldPersistTaps="handled"
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}
+        onLayout={() => scroll.current?.scrollToEnd({ animated: false })}
       >
         {messages.length === 0 && !loading ? (
           <View style={{ gap: space.sm }}>
@@ -197,6 +199,6 @@ export function AdvisorScreen({ question: initialQuestion }: { question?: string
           </Text>
         ) : null}
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingBox>
   );
 }
