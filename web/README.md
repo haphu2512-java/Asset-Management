@@ -32,9 +32,10 @@ npm run build          # đóng gói vào web/dist
 
 ## Deploy lên Vercel
 
-1. Trên [vercel.com](https://vercel.com) chọn **Add New → Project** và import repo này. Không cần đổi gì ở phần Build:
-   file `vercel.json` ở gốc repo đã khai báo lệnh cài đặt, lệnh build và thư mục kết quả (`web/dist`).
-   Giữ **Root Directory** là gốc repo.
+1. Trên [vercel.com](https://vercel.com) chọn **Add New → Project**, import repo này và đặt **Root Directory** là `web`.
+   Không cần đổi gì khác ở phần Build: `web/vercel.json` đã khai báo lệnh cài đặt, lệnh build và thư mục kết quả.
+   Giữ nguyên tuỳ chọn mặc định **Include files outside of the Root Directory in the Build Step** (đang bật), vì bản web
+   dùng chung mã trong `src/` ở gốc repo.
 2. Ở **Environment Variables** thêm hai biến (dùng cùng giá trị với app điện thoại):
 
    | Tên | Giá trị |
