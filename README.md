@@ -26,6 +26,11 @@
 
 Ô số tiền nhận các cách nhập như `23.000.000`, `23tr`, `23000k`, `1,5tr` hoặc `2 tỷ`.
 
+## Bản web
+
+Thư mục [`web/`](web/README.md) là bản web viết bằng React + Vite, deploy được lên Vercel, đăng nhập cùng tài khoản và
+dùng chung dữ liệu với app điện thoại. Cách chạy và deploy: xem [web/README.md](web/README.md).
+
 ## Cài đặt Supabase
 
 Dựng lại toàn bộ từ đầu (Supabase, Gemini, Expo Go, build APK): xem [docs/SETUP.md](docs/SETUP.md).
@@ -77,7 +82,8 @@ npm run check     # cả hai lệnh trên
 
 ## CI/CD
 
-- `.github/workflows/ci.yml`: mỗi pull request và mỗi lần push chạy typecheck, unit test, đóng gói thử app (web export)
+- `.github/workflows/ci.yml`: mỗi pull request và mỗi lần push chạy typecheck, unit test, đóng gói thử app (web export),
+  typecheck và build bản web trong `web/`
   và kiểm tra kiểu Edge Function bằng Deno. Push lên `main` có thay đổi phần app sẽ build APK (profile `preview`);
   tag `v*` build bản `production`. Cần secret `EXPO_TOKEN`, thiếu thì bước build tự bỏ qua.
 - `.github/workflows/supabase-deploy.yml`: khi `supabase/` thay đổi trên `main`, tự chạy migration mới và deploy lại
