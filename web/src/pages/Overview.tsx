@@ -82,8 +82,7 @@ export function OverviewPage() {
   }
 
   return (
-    <>
-      <div className="grid-2">
+    <div className="masonry">
         <Card>
           <div className="row between">
             <span className="label">Tài sản ròng</span>
@@ -145,7 +144,6 @@ export function OverviewPage() {
             <span className="label">{period === 'day' ? 'Hôm nay chưa có khoản chi nào.' : 'Tháng này chưa có khoản chi nào.'}</span>
           )}
         </Card>
-      </div>
 
       {due.length > 0 ? (
         <Card>
@@ -180,7 +178,6 @@ export function OverviewPage() {
         </Card>
       ) : null}
 
-      <div className="grid-2">
         <Card>
           <CardHeader title="Ngân sách tháng này" icon="budget" right={<Link to="/budgets" className="link">{statuses.length > 0 ? 'Chi tiết' : 'Đặt ngân sách'}</Link>} />
           {statuses.length === 0 ? (
@@ -211,9 +208,7 @@ export function OverviewPage() {
             </div>
           )}
         </Card>
-      </div>
 
-      <div className="grid-2">
         <Card>
           <CardHeader title="Giao dịch gần đây" icon="transactions" right={<Link to="/transactions" className="link">Tất cả</Link>} />
           {recent.length === 0 ? (
@@ -227,7 +222,6 @@ export function OverviewPage() {
           )}
         </Card>
 
-        <div className="stack" style={{ gap: 16 }}>
           {goals.length > 0 ? (
             <Card>
               <CardHeader title="Mục tiêu" icon="goals" right={<Link to="/goals" className="link">Tất cả</Link>} />
@@ -262,8 +256,6 @@ export function OverviewPage() {
               <Button small variant="secondary" label="Hỏi câu khác" onClick={() => navigate('/advisor')} />
             </div>
           </Card>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
