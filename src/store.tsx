@@ -220,6 +220,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const outbox = useRef<Op[]>([]);
   const flushing = useRef<Promise<boolean> | null>(null);
   const lastLoad = useRef(0);
+  /** True while data is being loaded from the server. */
+  const loading = useRef(false);
   const reload = useRef<(() => Promise<void>) | null>(null);
 
   const apply = useCallback((next: Data) => {
@@ -248,12 +250,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const send = useCallback(async (batch: Op[]) => {
     const first = batch[0];
     const config = TABLES[first.list];
-    const { error, status } =
-      first.type === 'delete'
-        ? await supabase.from(config.table).delete().eq(config.idColumn, first.id)
-        : await supabase
-            .from(config.table)
-            .upsert(batch.map((op) => (op as Extract<Op, { type: 'upsert' }>).row), { onConflict: config.conflict });
+    let request;
+    if (first.type === 'delete') {
+      request = supabase.from(config.table).delete().eq(config.idColumn, first.id);
+    } else if (first.type === 'update') {
+      // Touches the row only while it still matches; no row (deleted, or changed elsewhere) is fine.
+      request = supabase.from(config.table).update(first.row).eq(config.idColumn, first.id);
+      for (const [column, value] of Object.entries(first.match)) {
+        request = value == null ? request.is(column, null) : request.eq(column, value);
+      }
+    } else {
+      request = supabase
+        .from(config.table)
+        .upsert(batch.map((op) => (op as Extract<Op, { type: 'upsert' }>).row), { onConflict: config.conflict });
+    }
+    const { error, status } = await request;
     if (!error) return { result: 'ok' as const, error: null };
     return { result: classifyFailure(status, error.code), error };
   }, []);
@@ -353,12 +364,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const id = userId;
 
     async function fromServer() {
+      // A change made while the data was loading would be lost if the load replaced it, and the
+      // device copy would be kept instead of the server's. Send it and load again.
+      loading.current = true;
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const result = await fetchFromServer();
+          if (result !== 'busy' || !isMounted) return;
+        }
+      } finally {
+        loading.current = false;
+      }
+    }
+
+    async function fetchFromServer(): Promise<'done' | 'busy'> {
       // Pending changes go first: loading before them would overwrite what the user typed offline.
       const sent = await flush(id);
-      if (!isMounted) return;
+      if (!isMounted) return 'done';
       if (!sent) {
         setSyncError('Chưa kết nối được máy chủ. Thay đổi của bạn được lưu trên máy và sẽ tự đồng bộ khi có mạng.');
-        return;
+        return 'done';
       }
       try {
         const [assets, transactions, goals] = await Promise.all([
@@ -390,9 +415,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (snapRes.error) console.warn('Failed to load asset snapshots:', snapRes.error);
         else next = { ...next, snapshots: mergeSnapshots(next.snapshots, (snapRes.data ?? []).map(toSnapshot)) };
 
-        if (!isMounted) return;
-        // Anything queued while loading is newer than what was just fetched; keep the device copy then.
-        if (outbox.current.length === 0) apply(next);
+        if (!isMounted) return 'done';
+        // Anything queued while loading is newer than what was just fetched: send it, then load again.
+        if (outbox.current.length > 0) return 'busy';
+        apply(next);
         lastLoad.current = Date.now();
         setSyncError(schemaOutdated ? SCHEMA_OUTDATED_MESSAGE : null);
       } catch (err) {
@@ -401,10 +427,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setSyncError('Không tải được dữ liệu từ máy chủ. Đang hiển thị dữ liệu đã lưu trên máy.');
         }
       }
+      return 'done';
     }
 
     async function load() {
       setLoaded(false);
+      lastLoad.current = 0;
       AsyncStorage.multiRemove(legacyKeys(id)).catch(() => {});
       const lists = await Promise.all(LIST_KEYS.map((key) => readCache(cacheKey(key, id))));
       const cached: Data = { ...EMPTY, owner: id };
@@ -758,13 +786,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const u of updated) {
           const current = d.get('assets', u.id);
           if (!current || current.symbol !== u.symbol || current.quantity !== u.quantity) continue;
-          d.put('assets', {
-            ...current,
-            price: u.price,
-            priceUpdatedAt: u.priceUpdatedAt,
-            amount: u.amount,
-            updatedAt: u.updatedAt,
-          });
+          // Only the price columns are written, and only while the server still has this quantity.
+          // A full write here let a device with old data (an app not opened for a day, a tab left
+          // open) put back old quantities and re-create deleted holdings on every price refresh.
+          d.patch(
+            'assets',
+            { ...current, price: u.price, priceUpdatedAt: u.priceUpdatedAt, amount: u.amount, updatedAt: u.updatedAt },
+            ['price', 'price_updated_at', 'amount', 'updated_at'],
+            ['quantity'],
+          );
         }
       });
       return missing;
@@ -784,6 +814,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!loaded || !userId || data.owner !== userId) return;
     const maybeRefresh = (force: boolean) => {
       if (!pricesAreStale(dataRef.current.assets)) return;
+      // Holdings on the device may be out of date (cache from an earlier day, a tab left open):
+      // load the current ones first. The next check prices them.
+      if (Date.now() - lastLoad.current > RELOAD_AFTER_MS) {
+        if (!loading.current) reload.current?.();
+        return;
+      }
       if (!force && Date.now() - lastAutoRefresh.current < PRICE_MAX_AGE_MS) return;
       lastAutoRefresh.current = Date.now();
       refreshMarketPrices().catch(() => {});

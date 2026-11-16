@@ -305,9 +305,16 @@ export const TABLES: { [K in ListKey]: TableConfig<K> } = {
   },
 };
 
-/** A change waiting to be sent to the server. */
+/**
+ * A change waiting to be sent to the server.
+ *
+ * An upsert writes the whole row and creates it when missing, so it is only for changes the user
+ * made. An update writes a few columns of a row that already exists, and only while the row still
+ * has the `match` values; it never brings back a deleted row or overwrites columns it doesn't name.
+ */
 export type Op =
   | { list: ListKey; type: 'upsert'; row: Row }
+  | { list: ListKey; type: 'update'; id: string; row: Row; match: Row }
   | { list: ListKey; type: 'delete'; id: string };
 
 /** Records changes to the lists and the matching server operations in one go. */
@@ -336,6 +343,21 @@ export class Draft {
     this.ops.push({ list, type: 'upsert', row });
   }
 
+  /**
+   * Changes some fields of an existing item, for background work such as price refreshes.
+   * The server write names only the columns of `fields` and applies only while the row still has
+   * the columns of `match` (as computed from `item`), so a device holding stale data can't undo
+   * a change made elsewhere: not an edited quantity, and not a deletion.
+   */
+  patch<K extends ListKey>(list: K, item: Item<K>, fields: string[], match: string[] = []): void {
+    const items = this.data[list] as { id: string }[];
+    if (!items.some((x) => x.id === item.id)) return;
+    this.data = { ...this.data, [list]: items.map((x) => (x.id === item.id ? item : x)) };
+    const full = TABLES[list].toRow(item, this.userId);
+    const pick = (columns: string[]) => Object.fromEntries(columns.map((c) => [c, full[c] ?? null]));
+    this.ops.push({ list, type: 'update', id: item.id, row: pick(fields), match: pick(match) });
+  }
+
   remove(list: ListKey, id: string): void {
     const items = this.data[list] as { id: string }[];
     if (!items.some((x) => x.id === id)) return;
@@ -360,7 +382,7 @@ const MAX_BATCH = 100;
 export function nextBatch(queue: Op[]): Op[] {
   const first = queue[0];
   if (!first) return [];
-  if (first.type === 'delete') return [first];
+  if (first.type !== 'upsert') return [first];
   const columns = Object.keys(first.row).sort().join();
   const batch: Op[] = [];
   const seen = new Set<string>();
